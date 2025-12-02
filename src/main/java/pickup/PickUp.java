@@ -10,7 +10,6 @@ public class PickUp extends JavaPlugin {
     private PickupManager pickupManager;
     private boolean stoppedByCommand = false;
 
-    // 配置字段（全部扁平化）
     private boolean playerDriven;
     private double pickupRange;
     private int throwCooldownTicks;
@@ -38,7 +37,6 @@ public class PickUp extends JavaPlugin {
         this.pickupManager = new PickupManager(this);
         getServer().getPluginManager().registerEvents(pickupManager, this);
 
-        // 初始状态：如果配置 enabled=true，则启动；否则停止
         boolean enabledByConfig = getConfig().getBoolean("enabled", true);
         if (enabledByConfig) {
             pickupManager.enable();
@@ -69,7 +67,6 @@ public class PickUp extends JavaPlugin {
         selfImmuneTicks = Math.max(0, config.getInt("self-immune-ticks", 5));
         playerDrivenScanIntervalTicks = Math.max(1, config.getInt("player-driven-scan-interval-ticks", 6));
 
-        // ✅ 扁平键名（无点号）
         itemDrivenEnabled = config.getBoolean("item-driven-enabled", true);
         activeDetectionTicks = Math.max(0, config.getInt("active-detection-ticks", 60));
         pickupAttemptIntervalTicks = Math.max(1, config.getInt("pickup-attempt-interval-ticks", 2));
@@ -94,10 +91,8 @@ public class PickUp extends JavaPlugin {
         }
     }
 
-    // ========== Getter 方法（供 PickupManager 调用） ==========
-
     public boolean isPickupEnabled() {
-        return getConfig().getBoolean("enabled", true); // 注意：这里只看配置！
+        return getConfig().getBoolean("enabled", true);
     }
     public boolean isStopped() {
         return stoppedByCommand;

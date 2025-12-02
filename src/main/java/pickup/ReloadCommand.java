@@ -89,7 +89,6 @@ public class ReloadCommand implements CommandExecutor {
     private void handleServerRestart(CommandSender sender) {
         File flag = new File("restart.flag");
 
-        // 如果文件已存在，可以先删除（可选）
         if (flag.exists()) {
             if (!flag.delete()) {
                 sender.sendMessage("§c⚠️ 旧的 restart.flag 无法删除，请检查文件是否被占用。");
@@ -98,7 +97,6 @@ public class ReloadCommand implements CommandExecutor {
             }
         }
 
-        // 尝试创建新文件，并检查结果
         try {
             boolean created = flag.createNewFile();
             if (!created) {
@@ -112,7 +110,6 @@ public class ReloadCommand implements CommandExecutor {
             return;
         }
 
-        // 成功创建，继续重启流程
         String msg = "§c[系统] 服务器将在 3 秒后重启！";
         sender.sendMessage("§a✅ 服务器重启已触发...");
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(msg));
@@ -128,7 +125,6 @@ public class ReloadCommand implements CommandExecutor {
     }
 
     private void handleStart(CommandSender sender) {
-        // ✅ 使用运行时状态判断
         if (!plugin.isStopped()) {
             sender.sendMessage("§c拾取功能已经是开启状态！");
             return;
@@ -138,7 +134,6 @@ public class ReloadCommand implements CommandExecutor {
     }
 
     private void handleStop(CommandSender sender) {
-        // ✅ 使用运行时状态判断
         if (plugin.isStopped()) {
             sender.sendMessage("§c拾取功能已经是关闭状态！");
             return;
@@ -148,7 +143,7 @@ public class ReloadCommand implements CommandExecutor {
     }
 
     private void handleStatus(CommandSender sender) {
-        boolean isActive = !plugin.isStopped(); // 当前是否激活
+        boolean isActive = !plugin.isStopped();
         String status = isActive ? "§a启用" : "§c禁用";
         String manual = plugin.isStopped() ? " §7(手动停止)" : "";
 
