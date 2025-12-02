@@ -1,6 +1,6 @@
 # 📦 PickUp — 自定义拾取插件
 
-> 一个高性能、可配置、双模式（玩家驱动 / 物品驱动）的 Minecraft 自定义拾取插件，专为 Paper 1.19+ 服务器设计。
+> 一个高性能、可配置、双模式（玩家驱动 / 物品驱动）的 Minecraft 自定义拾取插件，适用于1.16.5-1.21.10 Spigot / Paper 服务器。
 
 ---
 
@@ -172,8 +172,9 @@ mode:
 ## ⚠️ 注意事项
 
 ### 版本兼容性
-最低版本要求：Minecraft 1.19+（Paper 推荐）  
-因依赖 <code>PersistentDataContainer</code> 在物品实体上的稳定实现，不支持 1.18.2 及以下版本。
+最低版本要求：Minecraft 1.14； 兼容：Minecraft 1.14 ~ 1.21.x（Spigot / Paper）
+
+因依赖 <code>PersistentDataContainer</code> 在1.14版首次引入， 1.14以前版本无法加载。
 
 ### 红石兼容性
 仅影响玩家拾取行为，漏斗、投掷器、矿车等红石组件仍按原版逻辑处理，确保兼容性。
