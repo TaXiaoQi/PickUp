@@ -35,7 +35,6 @@ public class PickupManager implements Listener {
 
     public PickupManager(PickUp plugin) {
         this.plugin = plugin;
-        loadConfig();
     }
 
     public void loadConfig() {

@@ -28,15 +28,20 @@ public class PickUp extends JavaPlugin {
                 getLogger().warning("无法删除 restart.flag，请检查文件权限");
             }
         }
+
         saveDefaultConfig();
+
+        reloadPickup();
+
         this.pickupManager = new PickupManager(this);
         getServer().getPluginManager().registerEvents(pickupManager, this);
+
         boolean enabledByDefault = getConfig().getBoolean("enabled", true);
         stoppedByCommand = !enabledByDefault;
-
         if (!stoppedByCommand) {
             pickupManager.enable();
         }
+
         ReloadCommand executor = new ReloadCommand(this);
         Objects.requireNonNull(getCommand("up")).setExecutor(executor);
         Objects.requireNonNull(getCommand("mc")).setExecutor(executor);
