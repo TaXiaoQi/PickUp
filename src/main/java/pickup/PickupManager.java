@@ -362,6 +362,15 @@ public class PickupManager implements Listener {
             return;
         }
 
+        if (source == ItemSourceType.PLAYER_DROP) {
+            String droppedBy = pdc.get(DROPPED_BY_KEY, PersistentDataType.STRING);
+            if (droppedBy != null && droppedBy.equals(player.getUniqueId().toString())) {
+                if (ticksSinceSpawn < selfImmuneTicks) {
+                    return;
+                }
+            }
+        }
+
         attemptPickup(player, item);
     }
 
