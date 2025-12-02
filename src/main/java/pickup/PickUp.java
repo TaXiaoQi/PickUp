@@ -8,15 +8,18 @@ import java.util.Objects;
 
 public class PickUp extends JavaPlugin {
     private PickupManager pickupManager;
-    private boolean stoppedByCommand = false; // 唯一运行时开关状态
+    private boolean stoppedByCommand = false;
 
+    // 配置字段（全部扁平化）
     private boolean playerDriven;
     private double pickupRange;
     private int throwCooldownTicks;
+    private int selfImmuneTicks;
+    private int playerDrivenScanIntervalTicks; // 新增
+
     private boolean itemDrivenEnabled;
     private int activeDetectionTicks;
     private int pickupAttemptIntervalTicks;
-    private int selfImmuneTicks;
 
     @Override
     public void onEnable() {
@@ -30,16 +33,17 @@ public class PickUp extends JavaPlugin {
         }
 
         saveDefaultConfig();
-
         reloadPickup();
 
         this.pickupManager = new PickupManager(this);
         getServer().getPluginManager().registerEvents(pickupManager, this);
 
-        boolean enabledByDefault = getConfig().getBoolean("enabled", true);
-        stoppedByCommand = !enabledByDefault;
-        if (!stoppedByCommand) {
+        // 初始状态：如果配置 enabled=true，则启动；否则停止
+        boolean enabledByConfig = getConfig().getBoolean("enabled", true);
+        if (enabledByConfig) {
             pickupManager.enable();
+        } else {
+            stoppedByCommand = true; // 等效于手动 stop
         }
 
         ReloadCommand executor = new ReloadCommand(this);
@@ -55,26 +59,32 @@ public class PickUp extends JavaPlugin {
         }
         getLogger().info("PickUp 插件已卸载");
     }
+
     public void reloadPickup() {
         FileConfiguration config = getConfig();
 
         playerDriven = config.getBoolean("player-driven", true);
         pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup-range", 1.5)));
-        throwCooldownTicks = Math.max(0, config.getInt("throw-cooldown-ticks", 30));
+        throwCooldownTicks = Math.max(0, config.getInt("throw-cooldown-ticks", 10));
+        selfImmuneTicks = Math.max(0, config.getInt("self-immune-ticks", 5));
+        playerDrivenScanIntervalTicks = Math.max(1, config.getInt("player-driven-scan-interval-ticks", 6));
 
-        itemDrivenEnabled = config.getBoolean("item-driven.enabled", true);
-        activeDetectionTicks = Math.max(0, config.getInt("item-driven.active-detection-ticks", 60));
-        pickupAttemptIntervalTicks = Math.max(1, config.getInt("item-driven.pickup-attempt-interval-ticks", 5));
-        selfImmuneTicks = Math.max(0, config.getInt("item-driven.self-immune-ticks", 5));
+        // ✅ 扁平键名（无点号）
+        itemDrivenEnabled = config.getBoolean("item-driven-enabled", true);
+        activeDetectionTicks = Math.max(0, config.getInt("active-detection-ticks", 60));
+        pickupAttemptIntervalTicks = Math.max(1, config.getInt("pickup-attempt-interval-ticks", 2));
 
-        pickupManager.loadConfig();
-
+        if (pickupManager != null) {
+            pickupManager.loadConfig();
+        }
         getLogger().info("PickUp 配置已重载");
     }
 
     public void startPickup() {
         stoppedByCommand = false;
-        pickupManager.enable();
+        if (pickupManager != null && !pickupManager.isActive()) {
+            pickupManager.enable();
+        }
     }
 
     public void stopPickup() {
@@ -84,12 +94,17 @@ public class PickUp extends JavaPlugin {
         }
     }
 
-    public boolean isPickupEnabled() {
-        return !stoppedByCommand;
-    }
+    // ========== Getter 方法（供 PickupManager 调用） ==========
 
+    public boolean isPickupEnabled() {
+        return getConfig().getBoolean("enabled", true); // 注意：这里只看配置！
+    }
     public boolean isStopped() {
         return stoppedByCommand;
+    }
+
+    public boolean isStoppedByCommand() {
+        return stoppedByCommand; // 运行时开关
     }
 
     public boolean isPlayerDriven() {
@@ -104,6 +119,14 @@ public class PickUp extends JavaPlugin {
         return throwCooldownTicks;
     }
 
+    public int getSelfImmuneTicks() {
+        return selfImmuneTicks;
+    }
+
+    public int getPlayerDrivenScanIntervalTicks() {
+        return playerDrivenScanIntervalTicks;
+    }
+
     public boolean isItemDrivenEnabled() {
         return itemDrivenEnabled;
     }
@@ -114,9 +137,5 @@ public class PickUp extends JavaPlugin {
 
     public int getPickupAttemptIntervalTicks() {
         return pickupAttemptIntervalTicks;
-    }
-
-    public int getSelfImmuneTicks() {
-        return selfImmuneTicks;
     }
 }

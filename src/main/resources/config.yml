@@ -2,28 +2,32 @@
 # 为 true 时使用插件拾取逻辑，为 false 时恢复原版拾取
 enabled: true
 
-# 玩家移动时触发拾取（玩家驱动模式）
-player-driven: true
-
-# 全局拾取半径（方块），有效范围：0.1 ~ 10.0
+# 全局拾取半径（方块），有效范围：0.1 ~ 10.0，不建议超过5
 pickup-range: 1.5
 
 # 全局物品延迟拾取（ticks，20 ticks = 1秒）
 # 物品生成后需等待此时间才能被拾取（防刷）
-throw-cooldown-ticks: 30
+throw-cooldown-ticks: 10
+
+
+# 玩家丢出的物品在此 ticks 内不能被自己拾取（防“扔了又捡”）
+self-immune-ticks: 5
+
+# 玩家移动时触发拾取
+player-driven: true
+
+# 玩家驱动模式下，多久检查一次“哪些玩家附近有物品”
+# 值越小，响应越快（如 2 = 每0.1秒），但CPU略高；值越大越省资源（如 10 = 每0.5秒）
+player-driven-scan-interval-ticks: 6
 
 # 物品主动行为设置（物品驱动模式）
-item-driven:
+item-driven-enabled: true
 
-  # 是否启用物品主动寻找附近玩家
-  enabled: true
 
-  # 物品生成后多少 ticks 内会尝试寻找玩家（超过则停止）
-  active-detection-ticks: 60
+# 物品生成后多少 ticks 内会尝试寻找玩家（超过则停止）
+active-detection-ticks: 60
 
-  # 每隔多少 ticks 尝试一次拾取（值越小越频繁，性能消耗越大）
-  # 建议 ≥1，例如：5 = 每秒4次，10 = 每秒2次
-  pickup-attempt-interval-ticks: 5
+# 每隔多少 ticks 尝试一次拾取（值越小越频繁，性能消耗越大）
+# 建议 ≥1，例如：5 = 每秒4次，10 = 每秒2次
+pickup-attempt-interval-ticks: 2
 
-  # 玩家丢出的物品在此 ticks 内不能被自己拾取（防“扔了又捡”）
-  self-immune-ticks: 5

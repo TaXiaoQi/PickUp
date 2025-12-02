@@ -22,75 +22,171 @@ import java.util.concurrent.ConcurrentHashMap;
 public class PickupManager implements Listener {
     private final PickUp plugin;
     private double pickupRangeSq;
+    private int throwCooldownTicks;
+    private int selfImmuneTicks;
+    private int activeDetectionTicks;
     private boolean active = false;
 
+    // NBT Keys
     private static final NamespacedKey SPAWN_TICK_KEY = new NamespacedKey("pickup", "spawn_tick");
     private static final NamespacedKey DROPPED_BY_KEY = new NamespacedKey("pickup", "dropped_by");
     private static final NamespacedKey IS_DROPPED_KEY = new NamespacedKey("pickup", "is_dropped");
-    private static final NamespacedKey DETECTION_START_KEY = new NamespacedKey("pickup", "detection_start");
-    private static final NamespacedKey DETECTION_END_KEY = new NamespacedKey("pickup", "detection_end");
 
-    private final Map<World, Set<ChunkCoord>> pendingChunksByWorld = new ConcurrentHashMap<>();
-    private BukkitRunnable detectionTask = null;
+    // Player-Driven: 活跃玩家集合
+    private final Set<UUID> activePlayers = ConcurrentHashMap.newKeySet();
+    private BukkitRunnable activePlayerUpdater = null;
+
+    // Item-Driven: 按世界追踪活跃物品
+    private final Map<World, Set<Item>> activeItemsByWorld = new ConcurrentHashMap<>();
+    private BukkitRunnable itemDetectionTask = null;
 
     public PickupManager(PickUp plugin) {
         this.plugin = plugin;
     }
 
     public void loadConfig() {
-        double pickupRange = plugin.getPickupRange();
-        pickupRangeSq = pickupRange * pickupRange;
+        double range = plugin.getPickupRange();
+        this.pickupRangeSq = range * range;
+        this.throwCooldownTicks = plugin.getThrowCooldownTicks();
+        this.selfImmuneTicks = plugin.getSelfImmuneTicks();
+        this.activeDetectionTicks = plugin.getActiveDetectionTicks();
     }
 
     public void enable() {
         if (active) return;
         active = true;
-        registerExistingItems();
-        if (plugin.isItemDrivenEnabled()) {
-            startDetectionTask();
-        }
+        loadConfig();
 
-        plugin.getLogger().info("PickupManager 已启用（NBT + 双模式 + 多世界）");
-    }
-
-    private void registerExistingItems() {
-        for (World world : Bukkit.getWorlds()) {
-            if (world.getPlayers().isEmpty()) continue;
-
-            Set<ChunkCoord> chunkSet = pendingChunksByWorld.computeIfAbsent(world, w -> ConcurrentHashMap.newKeySet());
-
-            for (Chunk chunk : world.getLoadedChunks()) {
-                boolean hasManagedItem = false;
-                for (Entity entity : chunk.getEntities()) {
-                    if (entity instanceof Item item && !item.isDead()) {
-                        PersistentDataContainer pdc = item.getPersistentDataContainer();
-                        if (pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG)) {
-                            // 是本插件管理的物品
-                            Long detectionEnd = pdc.get(DETECTION_END_KEY, PersistentDataType.LONG);
-                            int currentTick = Bukkit.getCurrentTick();
-                            if (detectionEnd != null && currentTick < detectionEnd) {
-                                hasManagedItem = true;
-                                break; // 只要有一个就注册该 chunk
+        // ========== 玩家驱动模式 ==========
+        if (plugin.isPlayerDriven()) {
+            int scanInterval = Math.max(1, plugin.getPlayerDrivenScanIntervalTicks());
+            activePlayerUpdater = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    if (!shouldRun()) {
+                        activePlayers.clear();
+                        return;
+                    }
+                    double range = plugin.getPickupRange();
+                    activePlayers.clear();
+                    for (Player player : Bukkit.getOnlinePlayers()) {
+                        if (player.getGameMode() == GameMode.SPECTATOR) continue;
+                        Location loc = player.getLocation();
+                        boolean hasNearby = false;
+                        for (Entity e : loc.getWorld().getNearbyEntities(loc, range, range, range)) {
+                            if (e instanceof Item) {
+                                hasNearby = true;
+                                break;
                             }
+                        }
+                        if (hasNearby) {
+                            activePlayers.add(player.getUniqueId());
                         }
                     }
                 }
-                if (hasManagedItem) {
-                    chunkSet.add(new ChunkCoord(chunk.getX(), chunk.getZ()));
-                }
-            }
+            };
+            activePlayerUpdater.runTaskTimer(plugin, 0L, scanInterval);
         }
+
+        // ========== 物品驱动模式 ==========
+        if (plugin.isItemDrivenEnabled()) {
+            // 初始化每个世界的活跃物品集
+            for (World world : Bukkit.getWorlds()) {
+                activeItemsByWorld.put(world, ConcurrentHashMap.newKeySet());
+            }
+
+            int attemptInterval = Math.max(1, plugin.getPickupAttemptIntervalTicks());
+            itemDetectionTask = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    if (!shouldRun()) return;
+
+                    long currentTick = Bukkit.getWorlds().getFirst().getFullTime(); // 全局 tick
+
+                    for (Map.Entry<World, Set<Item>> entry : activeItemsByWorld.entrySet()) {
+                        World world = entry.getKey();
+                        Set<Item> activeItems = entry.getValue();
+                        Set<Item> toRemove = new HashSet<>();
+
+                        for (Item item : activeItems) {
+                            if (item.isDead()) {
+                                toRemove.add(item);
+                                continue;
+                            }
+
+                            PersistentDataContainer pdc = item.getPersistentDataContainer();
+                            Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
+                            if (spawnTick == null) {
+                                toRemove.add(item);
+                                continue;
+                            }
+
+                            long age = currentTick - spawnTick;
+
+                            // 超过活跃上限 → 停止追踪
+                            if (age > activeDetectionTicks) {
+                                toRemove.add(item);
+                                continue;
+                            }
+
+                            // 全局投掷冷却
+                            if (age < throwCooldownTicks) {
+                                continue;
+                            }
+
+                            // 查找最近有效玩家
+                            Player nearest = null;
+                            double minDistSq = Double.MAX_VALUE;
+                            Location itemLoc = item.getLocation();
+
+                            for (Player player : world.getPlayers()) {
+                                if (player.getGameMode() == GameMode.SPECTATOR) continue;
+                                double distSq = player.getLocation().distanceSquared(itemLoc);
+                                if (distSq <= pickupRangeSq && distSq < minDistSq) {
+                                    nearest = player;
+                                    minDistSq = distSq;
+                                }
+                            }
+
+                            if (nearest != null) {
+                                performPickup(nearest, item);
+                            }
+
+                            if (item.isDead()) {
+                                toRemove.add(item);
+                            }
+                        }
+
+                        activeItems.removeAll(toRemove);
+                    }
+                }
+            };
+            itemDetectionTask.runTaskTimer(plugin, 0L, attemptInterval);
+        }
+
+        plugin.getLogger().info("PickupManager 已启用（双引擎：玩家驱动 + 物品驱动）");
+    }
+
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+    private boolean shouldRun() {
+        return plugin.isPickupEnabled() && !plugin.isStoppedByCommand();
     }
 
     public void disable() {
         if (!active) return;
         active = false;
 
-        if (detectionTask != null) {
-            detectionTask.cancel();
-            detectionTask = null;
+        if (activePlayerUpdater != null) {
+            activePlayerUpdater.cancel();
+            activePlayerUpdater = null;
         }
-        pendingChunksByWorld.clear();
+        activePlayers.clear();
+
+        if (itemDetectionTask != null) {
+            itemDetectionTask.cancel();
+            itemDetectionTask = null;
+        }
+        activeItemsByWorld.clear();
 
         plugin.getLogger().info("PickupManager 已禁用");
     }
@@ -99,129 +195,105 @@ public class PickupManager implements Listener {
         return active;
     }
 
+    // ========== 事件监听 ==========
+
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onItemSpawn(ItemSpawnEvent event) {
-        if (!plugin.isPickupEnabled()) return;
+        if (!shouldRun()) return;
+        Item item = event.getEntity();
+        if (item.isDead()) return;
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            Item item = event.getEntity();
-            if (item.isDead()) return;
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
+        if (pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG)) return;
 
-            PersistentDataContainer pdc = item.getPersistentDataContainer();
-            if (pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG)) {
-                return;
-            }
+        long currentTick = item.getWorld().getFullTime();
+        pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, currentTick);
+        pdc.set(IS_DROPPED_KEY, PersistentDataType.BYTE, (byte) 0); // 默认非玩家丢出
 
-            int currentTick = Bukkit.getCurrentTick();
-            int throwCooldown = plugin.getThrowCooldownTicks();
-            int activeDetection = plugin.getActiveDetectionTicks();
-
-            long spawnTick = currentTick;
-            long detectionStart = spawnTick + throwCooldown;
-            long detectionEnd = detectionStart + activeDetection;
-
-            pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, spawnTick);
-            pdc.set(DETECTION_START_KEY, PersistentDataType.LONG, detectionStart);
-            pdc.set(DETECTION_END_KEY, PersistentDataType.LONG, detectionEnd);
-            pdc.set(IS_DROPPED_KEY, PersistentDataType.BYTE, (byte) 0);
-
-            if (plugin.isItemDrivenEnabled()) {
-                Chunk chunk = item.getLocation().getChunk();
-                pendingChunksByWorld.computeIfAbsent(item.getWorld(), w -> ConcurrentHashMap.newKeySet())
-                        .add(new ChunkCoord(chunk.getX(), chunk.getZ()));
-            }
-        });
+        // 如果启用物品驱动，加入追踪
+        if (plugin.isItemDrivenEnabled()) {
+            activeItemsByWorld.computeIfAbsent(item.getWorld(), w -> ConcurrentHashMap.newKeySet()).add(item);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerDropItem(PlayerDropItemEvent event) {
-        if (!plugin.isPickupEnabled()) return;
+        if (!shouldRun()) return;
+        Item item = event.getItemDrop();
+        if (item.isDead()) return;
 
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            Item item = event.getItemDrop();
-            if (item.isDead()) return;
-
-            PersistentDataContainer pdc = item.getPersistentDataContainer();
-            if (!pdc.has(IS_DROPPED_KEY, PersistentDataType.BYTE)) {
-                pdc.set(IS_DROPPED_KEY, PersistentDataType.BYTE, (byte) 1);
-                pdc.set(DROPPED_BY_KEY, PersistentDataType.STRING, event.getPlayer().getUniqueId().toString());
-            }
-        });
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
+        pdc.set(IS_DROPPED_KEY, PersistentDataType.BYTE, (byte) 1);
+        pdc.set(DROPPED_BY_KEY, PersistentDataType.STRING, event.getPlayer().getUniqueId().toString());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityPickupItem(EntityPickupItemEvent event) {
-        if (!(event.getEntity() instanceof Player)) {
-            return;
-        }
-        if (!plugin.isPickupEnabled()) return;
-        event.setCancelled(true);
+        if (!(event.getEntity() instanceof Player)) return;
+        if (!shouldRun()) return;
+        event.setCancelled(true); // 强制走自定义逻辑
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
-        if (!plugin.isPickupEnabled() || !plugin.isPlayerDriven()) return;
+        if (!shouldRun() || !plugin.isPlayerDriven()) return;
+
         Player player = event.getPlayer();
         if (player.getGameMode() == GameMode.SPECTATOR) return;
+        if (!activePlayers.contains(player.getUniqueId())) return;
 
         Location from = event.getFrom();
         Location to = event.getTo();
         if (from.getBlockX() == to.getBlockX() &&
                 from.getBlockY() == to.getBlockY() &&
                 from.getBlockZ() == to.getBlockZ()) {
-            return;
+            return; // 防抖：未跨方块移动
         }
 
-        tryPlayerPickup(player);
+        tryPickup(player);
     }
 
-    private void tryPlayerPickup(Player player) {
+    // ========== 核心拾取逻辑 ==========
+
+    private void tryPickup(Player player) {
+        double range = plugin.getPickupRange();
         Location loc = player.getLocation();
         World world = player.getWorld();
-        double range = plugin.getPickupRange();
 
         for (Entity entity : world.getNearbyEntities(loc, range, range, range)) {
             if (entity instanceof Item item && !item.isDead()) {
-                tryPickup(player, item);
+                performPickup(player, item);
             }
         }
     }
 
-    private void tryPickup(Player player, Item item) {
-        if (item.isDead() || item.getItemStack().getType() == Material.AIR) {
-            return;
-        }
+    private void performPickup(Player player, Item item) {
+        if (item.isDead() || item.getItemStack().getType() == Material.AIR) return;
 
         PersistentDataContainer pdc = item.getPersistentDataContainer();
-        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
-        int currentTick = Bukkit.getCurrentTick();
+        Long spawnTickObj = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
 
-        if (spawnTick == null) {
-            attemptPickup(player, item);
+        long currentTick = player.getWorld().getFullTime();
+        long ticksSinceSpawn = (spawnTickObj != null) ? currentTick - spawnTickObj : Long.MAX_VALUE;
+
+        // 投掷冷却（适用于所有物品）
+        if (ticksSinceSpawn < throwCooldownTicks) {
             return;
         }
 
-        int ticksSinceSpawn = currentTick - spawnTick.intValue();
-        if (ticksSinceSpawn < plugin.getThrowCooldownTicks()) {
-            return;
-        }
-
+        // 自免疫逻辑（仅对玩家丢出的物品生效）
         Byte isDroppedByte = pdc.get(IS_DROPPED_KEY, PersistentDataType.BYTE);
         boolean isDropped = (isDroppedByte != null && isDroppedByte == 1);
         if (isDropped) {
-            String droppedByStr = pdc.get(DROPPED_BY_KEY, PersistentDataType.STRING);
-            if (droppedByStr != null) {
-                try {
-                    UUID droppedBy = UUID.fromString(droppedByStr);
-                    if (player.getUniqueId().equals(droppedBy)) {
-                        if (ticksSinceSpawn < plugin.getSelfImmuneTicks()) {
-                            return;
-                        }
-                    }
-                } catch (IllegalArgumentException ignored) {}
+            String droppedBy = pdc.get(DROPPED_BY_KEY, PersistentDataType.STRING);
+            if (droppedBy != null && droppedBy.equals(player.getUniqueId().toString())) {
+                if (ticksSinceSpawn < selfImmuneTicks) {
+                    return;
+                }
             }
         }
 
+        // 距离检查（防止因异步或移动导致超出范围）
         if (player.getLocation().distanceSquared(item.getLocation()) > pickupRangeSq) {
             return;
         }
@@ -251,94 +323,4 @@ public class PickupManager implements Listener {
             player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.1f, pitch);
         }
     }
-
-    private void startDetectionTask() {
-        int interval = plugin.getPickupAttemptIntervalTicks();
-        if (interval <= 0) interval = 5;
-
-        detectionTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!plugin.isItemDrivenEnabled() || !active) return;
-
-                int currentTick = Bukkit.getCurrentTick();
-
-                for (Map.Entry<World, Set<ChunkCoord>> entry : pendingChunksByWorld.entrySet()) {
-                    World world = entry.getKey();
-                    if (world.getPlayers().isEmpty()) continue;
-
-                    Set<ChunkCoord> chunkSet = entry.getValue();
-                    Set<ChunkCoord> snapshot = new HashSet<>(chunkSet);
-                    chunkSet.clear();
-
-                    for (ChunkCoord coord : snapshot) {
-                        if (!world.isChunkLoaded(coord.x, coord.z)) continue;
-
-                        Chunk chunk = world.getChunkAt(coord.x, coord.z);
-                        boolean chunkStillActive = false;
-
-                        for (Entity entity : chunk.getEntities()) {
-                            if (entity instanceof Item item && !item.isDead()) {
-                                PersistentDataContainer pdc = item.getPersistentDataContainer();
-                                Long detectionEnd = pdc.get(DETECTION_END_KEY, PersistentDataType.LONG);
-
-                                if (detectionEnd != null && currentTick < detectionEnd) {
-                                    processItemForPickup(item);
-
-                                    if (!item.isDead()) {
-                                        Long updatedEnd = pdc.get(DETECTION_END_KEY, PersistentDataType.LONG);
-                                        if (updatedEnd != null && currentTick < updatedEnd) {
-                                            chunkStillActive = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (chunkStillActive) {
-                            chunkSet.add(coord);
-                        }
-                    }
-                }
-            }
-        };
-        detectionTask.runTaskTimer(plugin, 0, interval);
-    }
-
-    private void processItemForPickup(Item item) {
-        if (item.isDead()) return;
-
-        PersistentDataContainer pdc = item.getPersistentDataContainer();
-        Long detectionStart = pdc.get(DETECTION_START_KEY, PersistentDataType.LONG);
-        Long detectionEnd = pdc.get(DETECTION_END_KEY, PersistentDataType.LONG);
-
-        if (detectionStart == null || detectionEnd == null) {
-            return;
-        }
-
-        int currentTick = Bukkit.getCurrentTick();
-        if (currentTick < detectionStart || currentTick >= detectionEnd) {
-            return;
-        }
-
-        Location loc = item.getLocation();
-        World world = loc.getWorld();
-        Player nearest = null;
-        double minDistSq = Double.MAX_VALUE;
-
-        for (Player player : world.getPlayers()) {
-            if (player.getGameMode() == GameMode.SPECTATOR) continue;
-            double distSq = player.getLocation().distanceSquared(loc);
-            if (distSq <= pickupRangeSq && distSq < minDistSq) {
-                nearest = player;
-                minDistSq = distSq;
-            }
-        }
-
-        if (nearest != null) {
-            tryPickup(nearest, item);
-        }
-    }
-
-    private record ChunkCoord(int x, int z) {}
 }
