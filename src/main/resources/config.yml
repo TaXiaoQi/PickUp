@@ -13,8 +13,8 @@ pickup:
   self-immune-ticks: 5
   # 物品拾取冷却（单位：ticks）
   delays:
-    player-drop: 10      # 玩家手动丢弃
-    natural-drop: 5      # 怪物死亡、方块破坏等自然掉落
+    player-drop: 20      # 玩家手动丢弃
+    natural-drop: 10      # 怪物死亡、方块破坏等自然掉落
     instant-pickup: 0    # 投掷器、命令 /give、红石生成
 
 # ========================
