@@ -252,4 +252,6 @@ while true; do
   fi
 done
 ```
+## 📄 许可证
+本项目采用 [MIT License](LICENSE) 开源。
 > PickUp — 让拾取更智能，而不失原味。
