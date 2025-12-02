@@ -178,5 +178,80 @@ item-driven:
 所有设置自动应用于所有已加载的世界，无需额外配置.
 
 ---
+## 🔁 安全重载原理与外部脚本说明
 
+### 🧠 为什么不用 Bukkit 的 `/reload`？
+Bukkit/Spigot 的原生 `/reload` 命令存在严重内存泄漏风险，官方已不推荐使用。为保障服务器长期稳定运行，PickUp 插件采用 “软关闭 + 外部重启” 机制实现安全重载。
+
+### ⚙️ 工作原理
+1. 玩家执行 `/mc reload`
+2. 插件执行以下操作：
+    - 停止所有事件监听器
+    - 清理内存中的临时数据
+    - 在插件目录创建 `restart.flag` 标记文件
+    - 调用 `Bukkit.shutdown()` 平滑关闭服务器
+3. **外部启动脚本** 检测到 `restart.flag` 存在 → 自动重新启动服务端
+4. 重启后，插件正常加载，配置生效，无残留状态
+
+✅ 整个过程**无内存泄漏**、**无类加载冲突**，适合生产环境。
+
+### 💻 Windows 启动脚本示例（`start.bat`）
+
+```bat
+@echo off
+chcp 65001 >nul
+title Paper Minecraft Server - Auto Restart Enabled
+cd /d "%~dp0"
+
+:: 检查 Paper 文件是否存在
+if not exist "paper-1.21.10-115.jar" (
+    echo [ERROR] 找不到服务端文件：paper-1.21.10-115.jar
+    echo 请确保该文件位于当前目录。
+    pause
+    exit /b
+)
+
+:launch
+echo [%date% %time%] 正在启动服务器...
+java -Xmx1G -Xms1G -jar paper-1.21.10-115.jar nogui
+
+echo [%date% %time%] 服务器已关闭。
+
+:: 检查是否需要重启
+if exist restart.flag (
+    del /f /q restart.flag >nul 2>&1
+    echo [%date% %time%] 检测到重启请求，5秒后重新启动...
+    timeout /t 5 /nobreak >nul
+    goto launch
+) else (
+    echo.
+    echo 未检测到重启请求，按任意键退出...
+    pause
+    exit /b
+)
+```
+
+> 📝 **使用说明**：
+> - 将此脚本保存为 `start.bat`，与 `paper-*.jar` 放在同一目录
+> - **始终通过双击 `start.bat` 启动服务器**
+> - 执行 `/mc reload` 后，服务器会自动重启并应用新配置
+
+### 🐧 Linux / macOS 用户？
+
+只需编写等效的 Shell 脚本（`start.sh`），逻辑相同：
+
+```bash
+#!/bin/bash
+while true; do
+  java -Xmx1G -Xms1G -jar paper-1.21.10-115.jar nogui
+  if [ -f "restart.flag" ]; then
+    rm -f restart.flag
+    echo "检测到重启请求，5秒后重启..."
+    sleep 5
+  else
+    echo "正常退出。"
+    break
+  fi
+done
+```
 > PickUp — 让拾取更智能，而不失原味。
