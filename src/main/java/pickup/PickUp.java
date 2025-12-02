@@ -10,15 +10,21 @@ public class PickUp extends JavaPlugin {
     private PickupManager pickupManager;
     private boolean stoppedByCommand = false;
 
+    // Player-driven settings
     private boolean playerDriven;
     private double pickupRange;
-    private int throwCooldownTicks;
     private int selfImmuneTicks;
-    private int playerDrivenScanIntervalTicks; // 新增
+    private int playerDrivenScanIntervalTicks;
 
+    // Item-driven settings
     private boolean itemDrivenEnabled;
     private int activeDetectionTicks;
     private int pickupAttemptIntervalTicks;
+
+    // Pickup delays by source type
+    private int playerDropDelayTicks;      // 玩家丢弃（Q键等）
+    private int naturalDropDelayTicks;     // 怪物/方块掉落
+    private int instantPickupDelayTicks;   // 命令/投掷器等（通常为0）
 
     @Override
     public void onEnable() {
@@ -37,11 +43,13 @@ public class PickUp extends JavaPlugin {
         this.pickupManager = new PickupManager(this);
         getServer().getPluginManager().registerEvents(pickupManager, this);
 
+        this.stoppedByCommand = false;
+
         boolean enabledByConfig = getConfig().getBoolean("enabled", true);
         if (enabledByConfig) {
             pickupManager.enable();
         } else {
-            stoppedByCommand = true; // 等效于手动 stop
+            pickupManager.disable();
         }
 
         ReloadCommand executor = new ReloadCommand(this);
@@ -61,15 +69,25 @@ public class PickUp extends JavaPlugin {
     public void reloadPickup() {
         FileConfiguration config = getConfig();
 
-        playerDriven = config.getBoolean("player-driven", true);
-        pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup-range", 1.5)));
-        throwCooldownTicks = Math.max(0, config.getInt("throw-cooldown-ticks", 10));
-        selfImmuneTicks = Math.max(0, config.getInt("self-immune-ticks", 5));
-        playerDrivenScanIntervalTicks = Math.max(1, config.getInt("player-driven-scan-interval-ticks", 6));
+        // pickup.range
+        pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup.range", 1.5)));
 
-        itemDrivenEnabled = config.getBoolean("item-driven-enabled", true);
-        activeDetectionTicks = Math.max(0, config.getInt("active-detection-ticks", 60));
-        pickupAttemptIntervalTicks = Math.max(1, config.getInt("pickup-attempt-interval-ticks", 2));
+        // pickup.self-immune-ticks
+        selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 5));
+
+        // pickup.delays.*
+        playerDropDelayTicks = Math.max(0, config.getInt("pickup.delays.player-drop", 10));
+        naturalDropDelayTicks = Math.max(0, config.getInt("pickup.delays.natural-drop", 5));
+        instantPickupDelayTicks = Math.max(0, config.getInt("pickup.delays.instant-pickup", 0));
+
+        // mode.player-driven
+        playerDriven = config.getBoolean("mode.player-driven", true);
+        playerDrivenScanIntervalTicks = Math.max(1, config.getInt("mode.player-scan-interval", 6));
+
+        // mode.item-driven
+        itemDrivenEnabled = config.getBoolean("mode.item-driven", true);
+        activeDetectionTicks = Math.max(0, config.getInt("mode.item-active-duration", 60));
+        pickupAttemptIntervalTicks = Math.max(1, config.getInt("mode.item-check-interval", 2));
 
         if (pickupManager != null) {
             pickupManager.loadConfig();
@@ -79,39 +97,40 @@ public class PickUp extends JavaPlugin {
 
     public void startPickup() {
         stoppedByCommand = false;
-        if (pickupManager != null && !pickupManager.isActive()) {
+        if (pickupManager != null) {
             pickupManager.enable();
         }
     }
 
     public void stopPickup() {
         stoppedByCommand = true;
-        if (pickupManager != null && pickupManager.isActive()) {
+        if (pickupManager != null) {
             pickupManager.disable();
         }
+    }
+
+    public boolean isPickupActive() {
+        if (stoppedByCommand) {
+            return false;
+        }
+        return getConfig().getBoolean("enabled", true);
     }
 
     public boolean isPickupEnabled() {
         return getConfig().getBoolean("enabled", true);
     }
-    public boolean isStopped() {
+
+    public boolean isStoppedByCommand() {
         return stoppedByCommand;
     }
 
-    public boolean isStoppedByCommand() {
-        return stoppedByCommand; // 运行时开关
-    }
-
+    // Player-driven
     public boolean isPlayerDriven() {
         return playerDriven;
     }
 
     public double getPickupRange() {
         return pickupRange;
-    }
-
-    public int getThrowCooldownTicks() {
-        return throwCooldownTicks;
     }
 
     public int getSelfImmuneTicks() {
@@ -122,6 +141,7 @@ public class PickUp extends JavaPlugin {
         return playerDrivenScanIntervalTicks;
     }
 
+    // Item-driven
     public boolean isItemDrivenEnabled() {
         return itemDrivenEnabled;
     }
@@ -132,5 +152,18 @@ public class PickUp extends JavaPlugin {
 
     public int getPickupAttemptIntervalTicks() {
         return pickupAttemptIntervalTicks;
+    }
+
+    // Delays by source
+    public int getPlayerDropDelayTicks() {
+        return playerDropDelayTicks;
+    }
+
+    public int getNaturalDropDelayTicks() {
+        return naturalDropDelayTicks;
+    }
+
+    public int getInstantPickupDelayTicks() {
+        return instantPickupDelayTicks;
     }
 }

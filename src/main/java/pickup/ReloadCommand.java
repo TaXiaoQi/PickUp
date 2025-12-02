@@ -111,7 +111,7 @@ public class ReloadCommand implements CommandExecutor {
         }
 
         String msg = "§c[系统] 服务器将在 3 秒后重启！";
-        sender.sendMessage("§a✅ 服务器重启已触发...");
+        sender.sendMessage("服务器将在 3 秒后重启！");
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(msg));
         plugin.getLogger().info("[Server Restart] Triggered by " + sender.getName());
 
@@ -120,12 +120,12 @@ public class ReloadCommand implements CommandExecutor {
 
     private void handlePluginReload(CommandSender sender) {
         plugin.reloadPickup();
-        sender.sendMessage("§a[PickUp] 配置已重载！");
+        sender.sendMessage("[PickUp] 配置已重载！");
         plugin.getLogger().info("[PickUp] 配置重载完成，执行者: " + sender.getName());
     }
 
     private void handleStart(CommandSender sender) {
-        if (!plugin.isStopped()) {
+        if (!plugin.isStoppedByCommand()) {
             sender.sendMessage("§c拾取功能已经是开启状态！");
             return;
         }
@@ -134,7 +134,7 @@ public class ReloadCommand implements CommandExecutor {
     }
 
     private void handleStop(CommandSender sender) {
-        if (plugin.isStopped()) {
+        if (plugin.isStoppedByCommand()) {
             sender.sendMessage("§c拾取功能已经是关闭状态！");
             return;
         }
@@ -143,20 +143,33 @@ public class ReloadCommand implements CommandExecutor {
     }
 
     private void handleStatus(CommandSender sender) {
-        boolean isActive = !plugin.isStopped();
+        boolean isActive = !plugin.isStoppedByCommand();
         String status = isActive ? "§a启用" : "§c禁用";
-        String manual = plugin.isStopped() ? " §7(手动停止)" : "";
+        String manual = plugin.isStoppedByCommand() ? " §7(手动停止)" : "";
 
         sender.sendMessage("§6========== PickUp 状态 ==========");
         sender.sendMessage("§7拾取功能: " + status + manual);
-        sender.sendMessage("§7拾取模式: " + (plugin.isPlayerDriven() ? "§e玩家驱动" : "§e物品驱动"));
+
+        // 显示双驱动模式状态
+        String playerMode = plugin.isPlayerDriven() ? "§a启用" : "§c禁用";
+        String itemMode = plugin.isItemDrivenEnabled() ? "§a启用" : "§c禁用";
+        sender.sendMessage("§7玩家驱动: " + playerMode);
+        sender.sendMessage("§7物品驱动: " + itemMode);
+
         sender.sendMessage("§7拾取半径: §e" + plugin.getPickupRange() + " 方块");
-        sender.sendMessage("§7投掷冷却: §e" + plugin.getThrowCooldownTicks() + " ticks");
+        sender.sendMessage("§7自免疫时间: §e" + plugin.getSelfImmuneTicks() + " ticks");
+
+        // 显示三种 delay
+        sender.sendMessage("§7冷却设置:");
+        sender.sendMessage("  §7• 玩家丢弃: §e" + plugin.getPlayerDropDelayTicks() + " ticks");
+        sender.sendMessage("  §7• 自然掉落: §e" + plugin.getNaturalDropDelayTicks() + " ticks");
+        sender.sendMessage("  §7• 即时生成: §e" + plugin.getInstantPickupDelayTicks() + " ticks");
+
         if (plugin.isItemDrivenEnabled()) {
-            sender.sendMessage("§7主动检测: §a开启 §7(" + plugin.getActiveDetectionTicks() + " ticks)");
-        } else {
-            sender.sendMessage("§7主动检测: §c关闭");
+            sender.sendMessage("§7物品活跃期: §e" + plugin.getActiveDetectionTicks() + " ticks");
+            sender.sendMessage("§7检测频率: §e" + plugin.getPickupAttemptIntervalTicks() + " ticks");
         }
+
         sender.sendMessage("§6================================");
     }
 }
