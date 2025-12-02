@@ -379,54 +379,59 @@ public class PickupManager implements Listener {
 
     private void attemptPickup(Player player, Item item) {
         if (item.isDead()) return;
-        ItemStack stack = item.getItemStack().clone();
-        if (stack.getType() == Material.AIR) return;
+        ItemStack originalStack = item.getItemStack();
+        if (originalStack.getType() == Material.AIR || originalStack.getAmount() <= 0) return;
 
         PlayerInventory inv = player.getInventory();
+        ItemStack stack = originalStack.clone(); // 操作副本，避免污染原实体
 
-        // 1. 先尝试加入主背包（含热键栏）
-        Map<Integer, ItemStack> leftover = inv.addItem(stack);
-        int totalLeftover = leftover.values().stream().mapToInt(ItemStack::getAmount).sum();
-        int taken = stack.getAmount() - totalLeftover;
+        int taken = 0;
 
-        // 2. 如果还有剩余，尝试放入副手（仅当副手为空 或 可堆叠）
-        if (totalLeftover > 0) {
-            ItemStack offHand = inv.getItemInOffHand();
-            ItemStack remaining = leftover.values().iterator().next(); // 只处理第一个（通常只有一个）
-
-            if (offHand.getType() == Material.AIR) {
-                // 副手为空：直接放入（最多一组）
-                int amountToMove = Math.min(remaining.getMaxStackSize(), remaining.getAmount());
-                inv.setItemInOffHand(new ItemStack(remaining.getType(), amountToMove));
-                remaining.setAmount(remaining.getAmount() - amountToMove);
+        // === 1. 优先检查副手是否可合并（同类且未满）===
+        ItemStack offHand = inv.getItemInOffHand();
+        if (!offHand.getType().isAir() && offHand.isSimilar(stack)) {
+            int spaceInOffHand = stack.getMaxStackSize() - offHand.getAmount();
+            if (spaceInOffHand > 0) {
+                int amountToMove = Math.min(spaceInOffHand, stack.getAmount());
+                // 合并到副手
+                offHand.setAmount(offHand.getAmount() + amountToMove);
+                inv.setItemInOffHand(offHand);
+                stack.setAmount(stack.getAmount() - amountToMove);
                 taken += amountToMove;
-            } else if (offHand.isSimilar(remaining)) {
-                // 副手有同类物品：尝试堆叠
-                int space = remaining.getMaxStackSize() - offHand.getAmount();
-                if (space > 0) {
-                    int amountToMove = Math.min(space, remaining.getAmount());
-                    offHand.setAmount(offHand.getAmount() + amountToMove);
-                    inv.setItemInOffHand(offHand);
-                    remaining.setAmount(remaining.getAmount() - amountToMove);
-                    taken += amountToMove;
-                }
             }
-
-            // 更新 leftover 状态
-            totalLeftover = remaining.getAmount();
         }
 
-        // 3. 根据最终结果更新物品实体
-        if (taken > 0) {
-            if (totalLeftover <= 0) {
-                item.remove();
+        // === 2. 尝试放入主物品栏（36格）===
+        if (stack.getAmount() > 0) {
+            Map<Integer, ItemStack> leftover = inv.addItem(stack);
+            int leftoverAmount = leftover.values().stream().mapToInt(ItemStack::getAmount).sum();
+            taken += (stack.getAmount() - leftoverAmount);
+            // 更新 stack 为真正剩余的量
+            if (leftoverAmount > 0) {
+                stack = leftover.values().iterator().next().clone();
             } else {
-                // 构造新的剩余堆栈
-                ItemStack finalRemaining = stack.clone();
-                finalRemaining.setAmount(totalLeftover);
-                item.setItemStack(finalRemaining);
+                stack.setAmount(0);
+            }
+        }
+
+        // === 3. 如果还有剩余，且副手为空 → 放入副手===
+        if (stack.getAmount() > 0 && inv.getItemInOffHand().getType().isAir()) {
+            int amountToMove = Math.min(stack.getMaxStackSize(), stack.getAmount());
+            inv.setItemInOffHand(new ItemStack(stack.getType(), amountToMove));
+            stack.setAmount(stack.getAmount() - amountToMove);
+            taken += amountToMove;
+        }
+
+        // === 4. 更新物品实体状态 ===
+        if (taken > 0) {
+            if (stack.getAmount() <= 0) {
+                item.remove(); // 全部拾取
+            } else {
+                // 还有剩余，更新物品堆栈
+                item.setItemStack(stack);
             }
 
+            // 播放拾取音效
             float pitch = (float) (0.8 + Math.random() * 0.4);
             player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.1f, pitch);
         }

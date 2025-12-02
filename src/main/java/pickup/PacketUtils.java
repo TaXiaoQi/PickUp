@@ -1,5 +1,6 @@
 package pickup;
 
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 
@@ -7,11 +8,21 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+/**
+ * 多版本兼容的拾取动画发送工具（1.16.5 ~ 1.21.x）
+ * 修复了 1.20.5+ 因版本判断错误导致动画不播放的问题。
+ */
 public final class PacketUtils {
 
+    private static final String VERSION = Bukkit.getServer().getClass().getPackage().getName();
+    private static final boolean IS_NEW_CRAFTBUKKIT = !VERSION.contains("v1_"); // 1.20.5+
+    private static final boolean IS_1_17_PLUS = IS_NEW_CRAFTBUKKIT ||
+            VERSION.compareTo("org.bukkit.craftbukkit.v1_17_R1") >= 0;
+
+    // 反射缓存
     private static volatile Method CACHED_GET_HANDLE = null;
     private static volatile Method CACHED_GET_ID = null;
-    private static volatile Constructor<?> CACHED_COLLECT_PACKET_CONSTRUCTOR = null;
+    private static volatile Constructor<?> CACHED_PACKET_CONSTRUCTOR = null;
     private static volatile Field CACHED_CONNECTION_FIELD = null;
 
     private PacketUtils() {}
@@ -20,7 +31,6 @@ public final class PacketUtils {
         try {
             Object nmsPlayer = getHandle(player);
             Object nmsItem = getHandle(item);
-
             if (nmsPlayer == null || nmsItem == null) return;
 
             int itemId = getEntityId(nmsItem);
@@ -31,17 +41,22 @@ public final class PacketUtils {
             sendPacket(connection, packet);
 
         } catch (Exception e) {
+            // 建议替换为插件 logger，但至少打印错误
             e.printStackTrace();
         }
     }
 
-    // ✅ 修复点：从 CraftEntity 获取 getHandle 方法
     private static Object getHandle(Entity entity) throws Exception {
         if (CACHED_GET_HANDLE == null) {
             synchronized (PacketUtils.class) {
                 if (CACHED_GET_HANDLE == null) {
-                    CACHED_GET_HANDLE = Class.forName("org.bukkit.craftbukkit.entity.CraftEntity")
-                            .getMethod("getHandle");
+                    Class<?> craftEntityClass;
+                    if (IS_NEW_CRAFTBUKKIT) {
+                        craftEntityClass = Class.forName("org.bukkit.craftbukkit.entity.CraftEntity");
+                    } else {
+                        craftEntityClass = Class.forName(VERSION + ".entity.CraftEntity");
+                    }
+                    CACHED_GET_HANDLE = craftEntityClass.getMethod("getHandle");
                 }
             }
         }
@@ -60,15 +75,20 @@ public final class PacketUtils {
     }
 
     private static Object createCollectPacket(int collectedId, int collectorId, int count) throws Exception {
-        if (CACHED_COLLECT_PACKET_CONSTRUCTOR == null) {
+        if (CACHED_PACKET_CONSTRUCTOR == null) {
             synchronized (PacketUtils.class) {
-                if (CACHED_COLLECT_PACKET_CONSTRUCTOR == null) {
-                    Class<?> packetClass = Class.forName("net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket");
-                    CACHED_COLLECT_PACKET_CONSTRUCTOR = packetClass.getConstructor(int.class, int.class, int.class);
+                if (CACHED_PACKET_CONSTRUCTOR == null) {
+                    Class<?> packetClass;
+                    if (IS_1_17_PLUS) {
+                        packetClass = Class.forName("net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket");
+                    } else {
+                        packetClass = Class.forName(VERSION + ".PacketPlayOutCollect");
+                    }
+                    CACHED_PACKET_CONSTRUCTOR = packetClass.getConstructor(int.class, int.class, int.class);
                 }
             }
         }
-        return CACHED_COLLECT_PACKET_CONSTRUCTOR.newInstance(collectedId, collectorId, count);
+        return CACHED_PACKET_CONSTRUCTOR.newInstance(collectedId, collectorId, count);
     }
 
     private static Object getPlayerConnection(Object nmsPlayer) throws Exception {
@@ -76,16 +96,27 @@ public final class PacketUtils {
             synchronized (PacketUtils.class) {
                 if (CACHED_CONNECTION_FIELD == null) {
                     Class<?> playerClass = nmsPlayer.getClass();
-                    for (Field f : playerClass.getDeclaredFields()) {
-                        if ("ServerGamePacketListenerImpl".equals(f.getType().getSimpleName())) {
-                            f.setAccessible(true);
-                            CACHED_CONNECTION_FIELD = f;
-                            break;
+                    Field connectionField = null;
+
+                    if (IS_1_17_PLUS) {
+                        // 1.17+: 查找 ServerGamePacketListenerImpl 类型字段
+                        for (Field f : playerClass.getDeclaredFields()) {
+                            if (f.getType().getSimpleName().equals("ServerGamePacketListenerImpl")) {
+                                f.setAccessible(true);
+                                connectionField = f;
+                                break;
+                            }
                         }
+                    } else {
+                        // 1.16.5: 直接获取 playerConnection
+                        connectionField = playerClass.getDeclaredField("playerConnection");
+                        connectionField.setAccessible(true);
                     }
-                    if (CACHED_CONNECTION_FIELD == null) {
-                        throw new RuntimeException("无法找到 PlayerConnection 字段");
+
+                    if (connectionField == null) {
+                        throw new RuntimeException("Failed to find PlayerConnection field in " + playerClass.getName());
                     }
+                    CACHED_CONNECTION_FIELD = connectionField;
                 }
             }
         }
@@ -93,7 +124,12 @@ public final class PacketUtils {
     }
 
     private static void sendPacket(Object connection, Object packet) throws Exception {
-        Method sendMethod = connection.getClass().getMethod("send", Class.forName("net.minecraft.network.protocol.Packet"));
-        sendMethod.invoke(connection, packet);
+        if (IS_1_17_PLUS) {
+            Method sendMethod = connection.getClass().getMethod("send", Class.forName("net.minecraft.network.protocol.Packet"));
+            sendMethod.invoke(connection, packet);
+        } else {
+            Method sendMethod = connection.getClass().getMethod("sendPacket", Class.forName(VERSION + ".Packet"));
+            sendMethod.invoke(connection, packet);
+        }
     }
 }
