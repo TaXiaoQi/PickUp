@@ -116,10 +116,6 @@ public class PickUp extends JavaPlugin {
         return getConfig().getBoolean("enabled", true);
     }
 
-    public boolean isPickupEnabled() {
-        return getConfig().getBoolean("enabled", true);
-    }
-
     public boolean isStoppedByCommand() {
         return stoppedByCommand;
     }

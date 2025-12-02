@@ -358,16 +358,6 @@ public class PickupManager implements Listener {
             return;
         }
 
-        // 自免疫：仅对 PLAYER_DROP 且同一玩家
-        if (source == ItemSourceType.PLAYER_DROP) {
-            String droppedBy = pdc.get(DROPPED_BY_KEY, PersistentDataType.STRING);
-            if (droppedBy != null && droppedBy.equals(player.getUniqueId().toString())) {
-                if (ticksSinceSpawn < selfImmuneTicks) {
-                    return;
-                }
-            }
-        }
-
         if (player.getLocation().distanceSquared(item.getLocation()) > pickupRangeSq) {
             return;
         }
