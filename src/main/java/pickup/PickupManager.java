@@ -7,6 +7,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockDropItemEvent;
+import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -19,12 +21,18 @@ import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 拾取管理器：实现三类独立配置的智能拾取系统
+ * - PLAYER_DROP: 玩家丢弃（可设自身免疫）
+ * - NATURAL_DROP: 怪物死亡 / 挖矿掉落
+ * - INSTANT_PICKUP: 其他所有来源（命令、投掷器、漏斗等）
+ */
 public class PickupManager implements Listener {
     private final PickUp plugin;
     private double pickupRangeSq;
-    private int playerDropDelayTicks;     // 玩家丢弃冷却
-    private int naturalDropDelayTicks;    // 怪物/方块掉落冷却
-    private int instantPickupDelayTicks;  // 红石/命令等即时物品冷却（可设为0）
+    private int playerDropDelayTicks;
+    private int naturalDropDelayTicks;
+    private int instantPickupDelayTicks;
     private int selfImmuneTicks;
     private int activeDetectionTicks;
     private boolean active = false;
@@ -35,11 +43,11 @@ public class PickupManager implements Listener {
     private static final NamespacedKey DROPPED_BY_KEY = new NamespacedKey("pickup", "dropped_by");
     private static final NamespacedKey SOURCE_KEY = new NamespacedKey("pickup", "source");
 
-    // Player-Driven: 活跃玩家集合
+    // 玩家驱动模式
     private final Set<UUID> activePlayers = ConcurrentHashMap.newKeySet();
     private BukkitRunnable activePlayerUpdater = null;
 
-    // Item-Driven: 按世界追踪活跃物品
+    // 物品驱动模式
     private final Map<World, Set<Item>> activeItemsByWorld = new ConcurrentHashMap<>();
     private BukkitRunnable itemDetectionTask = null;
 
@@ -52,7 +60,7 @@ public class PickupManager implements Listener {
         this.pickupRangeSq = range * range;
         this.playerDropDelayTicks = plugin.getPlayerDropDelayTicks();
         this.naturalDropDelayTicks = plugin.getNaturalDropDelayTicks();
-        this.instantPickupDelayTicks = plugin.getInstantPickupDelayTicks(); // 通常为0，但可配置
+        this.instantPickupDelayTicks = plugin.getInstantPickupDelayTicks();
         this.selfImmuneTicks = plugin.getSelfImmuneTicks();
         this.activeDetectionTicks = plugin.getActiveDetectionTicks();
     }
@@ -130,16 +138,19 @@ public class PickupManager implements Listener {
                                 continue;
                             }
 
-                            // 获取来源类型
                             String sourceStr = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
                             ItemSourceType source = parseSource(sourceStr);
+
+                            // UNKNOWN 不允许拾取（应已被转为 INSTANT_PICKUP）
+                            if (source == ItemSourceType.UNKNOWN) {
+                                continue;
+                            }
 
                             long requiredDelay = getRequiredDelay(source);
                             if (age < requiredDelay) {
                                 continue;
                             }
 
-                            // 查找最近玩家
                             Player nearest = null;
                             double minDistSq = Double.MAX_VALUE;
                             Location itemLoc = item.getLocation();
@@ -169,7 +180,7 @@ public class PickupManager implements Listener {
             itemDetectionTask.runTaskTimer(plugin, 0L, attemptInterval);
         }
 
-        plugin.getLogger().info("PickupManager 已启用（双引擎：玩家驱动 + 物品驱动）");
+        plugin.getLogger().info("PickupManager 已启用（三类独立：PLAYER_DROP / NATURAL_DROP / INSTANT_PICKUP）");
     }
 
     private long getRequiredDelay(ItemSourceType source) {
@@ -177,15 +188,16 @@ public class PickupManager implements Listener {
             case PLAYER_DROP -> playerDropDelayTicks;
             case NATURAL_DROP -> naturalDropDelayTicks;
             case INSTANT_PICKUP -> instantPickupDelayTicks;
+            case UNKNOWN -> Long.MAX_VALUE; // 不应发生
         };
     }
 
     private ItemSourceType parseSource(String sourceStr) {
-        if (sourceStr == null) return ItemSourceType.NATURAL_DROP;
+        if (sourceStr == null) return ItemSourceType.UNKNOWN;
         try {
             return ItemSourceType.valueOf(sourceStr);
         } catch (IllegalArgumentException e) {
-            return ItemSourceType.NATURAL_DROP;
+            return ItemSourceType.UNKNOWN;
         }
     }
 
@@ -212,7 +224,9 @@ public class PickupManager implements Listener {
         return active;
     }
 
-    // ========== 事件监听 ==========
+    // ========================
+    // 事件监听：精确打标三类来源
+    // ========================
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onItemSpawn(ItemSpawnEvent event) {
@@ -221,81 +235,28 @@ public class PickupManager implements Listener {
         if (item.isDead()) return;
 
         PersistentDataContainer pdc = item.getPersistentDataContainer();
-        if (pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG)) return;
+        if (pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG)) return; // 防重复
 
         long currentTick = item.getWorld().getFullTime();
         pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, currentTick);
+        pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.UNKNOWN.name());
 
-        // === 关键：记录原始 pickupDelay 以判断来源 ===
-        int originalDelay = item.getPickupDelay();
-        setPickupDelayToMax(item); // 所有物品 delay 拉满，交由插件控制
-
-        // 根据原始 delay 判断来源
-        if (originalDelay == 0) {
-            pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.INSTANT_PICKUP.name());
-        } else {
-            pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
-        }
+        setPickupDelayToMax(item);
 
         if (plugin.isItemDrivenEnabled()) {
             activeItemsByWorld.computeIfAbsent(item.getWorld(), w -> ConcurrentHashMap.newKeySet()).add(item);
         }
-    }
 
-    private void setPickupDelayToMax(Item item) {
-        try {
-            item.getClass().getMethod("setPickupDelay", int.class);
-            item.setPickupDelay(Integer.MAX_VALUE);
-            return;
-        } catch (NoSuchMethodException ignored) {
-        }
-
-        try {
-            Object nmsItem = item.getClass().getMethod("getHandle").invoke(item);
-            Field pickupDelayField = getCachedPickupDelayField(nmsItem.getClass());
-            if (pickupDelayField != null) {
-                pickupDelayField.setAccessible(true);
-                pickupDelayField.set(nmsItem, Integer.MAX_VALUE);
-            }
-        } catch (Exception e) {
-            plugin.getLogger().warning("Failed to disable vanilla pickup delay: " + e.getMessage());
-        }
-    }
-
-    private static Field getCachedPickupDelayField(Class<?> nmsItemClass) {
-        Field field = cachedPickupDelayField;
-        if (field != null) return field;
-
-        synchronized (PickupManager.class) {
-            if (cachedPickupDelayField != null) return cachedPickupDelayField;
-
-            Field pickupDelayField = null;
-            for (Field f : nmsItemClass.getDeclaredFields()) {
-                if (f.getType() == int.class) {
-                    String name = f.getName().toLowerCase();
-                    if (name.contains("delay") || name.equals("e") || name.equals("bv")) {
-                        pickupDelayField = f;
-                        break;
-                    }
+        // 关键修正：1 tick 后若仍是 UNKNOWN → 归为 INSTANT_PICKUP（不是 NATURAL_DROP！）
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!item.isDead()) {
+                PersistentDataContainer pdc2 = item.getPersistentDataContainer();
+                String current = pdc2.get(SOURCE_KEY, PersistentDataType.STRING);
+                if ("UNKNOWN".equals(current)) {
+                    pdc2.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.INSTANT_PICKUP.name());
                 }
             }
-
-            if (pickupDelayField == null) {
-                int intFieldIndex = 0;
-                for (Field f : nmsItemClass.getDeclaredFields()) {
-                    if (f.getType() == int.class) {
-                        if (intFieldIndex == 2) {
-                            pickupDelayField = f;
-                            break;
-                        }
-                        intFieldIndex++;
-                    }
-                }
-            }
-
-            cachedPickupDelayField = pickupDelayField;
-            return pickupDelayField;
-        }
+        }, 1L);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -308,6 +269,49 @@ public class PickupManager implements Listener {
         pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.PLAYER_DROP.name());
         pdc.set(DROPPED_BY_KEY, PersistentDataType.STRING, event.getPlayer().getUniqueId().toString());
     }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityDeath(EntityDeathEvent event) {
+        if (!plugin.isPickupActive()) return;
+        if (event.getDrops().isEmpty()) return;
+
+        Location loc = event.getEntity().getLocation();
+        World world = loc.getWorld();
+        long currentTick = world.getFullTime();
+
+        // 延迟1 tick，等物品生成后再打标
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            for (Entity entity : world.getNearbyEntities(loc, 2.0, 2.0, 2.0)) {
+                if (entity instanceof Item item && !item.isDead()) {
+                    PersistentDataContainer pdc = item.getPersistentDataContainer();
+                    String source = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
+                    if ("UNKNOWN".equals(source)) {
+                        pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
+                        pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, currentTick);
+                    }
+                }
+            }
+        }, 1L);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockDropItem(BlockDropItemEvent event) {
+        if (!plugin.isPickupActive()) return;
+        long currentTick = event.getBlock().getWorld().getFullTime();
+        for (Item item : event.getItems()) {
+            if (item.isDead()) continue;
+            PersistentDataContainer pdc = item.getPersistentDataContainer();
+            String source = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
+            if ("UNKNOWN".equals(source)) {
+                pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
+                pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, currentTick);
+            }
+        }
+    }
+
+    // ========================
+    // 拾取逻辑（玩家驱动 + 通用）
+    // ========================
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
@@ -362,6 +366,7 @@ public class PickupManager implements Listener {
             return;
         }
 
+        // 自身免疫仅对 PLAYER_DROP 生效
         if (source == ItemSourceType.PLAYER_DROP) {
             String droppedBy = pdc.get(DROPPED_BY_KEY, PersistentDataType.STRING);
             if (droppedBy != null && droppedBy.equals(player.getUniqueId().toString())) {
@@ -397,10 +402,73 @@ public class PickupManager implements Listener {
         }
     }
 
-    // 枚举定义（建议放在单独文件，但这里内联方便）
+    // ========================
+    // 反射 & 工具方法
+    // ========================
+
+    private void setPickupDelayToMax(Item item) {
+        try {
+            item.setPickupDelay(Integer.MAX_VALUE);
+            return;
+        } catch (NoSuchMethodError ignored) {
+        }
+
+        try {
+            Object nmsItem = item.getClass().getMethod("getHandle").invoke(item);
+            Field pickupDelayField = getCachedPickupDelayField(nmsItem.getClass());
+            if (pickupDelayField != null) {
+                pickupDelayField.setAccessible(true);
+                pickupDelayField.set(nmsItem, Integer.MAX_VALUE);
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to disable vanilla pickup delay: " + e.getMessage());
+        }
+    }
+
+    private static Field getCachedPickupDelayField(Class<?> nmsItemClass) {
+        Field field = cachedPickupDelayField;
+        if (field != null) return field;
+
+        synchronized (PickupManager.class) {
+            if (cachedPickupDelayField != null) return cachedPickupDelayField;
+
+            Field pickupDelayField = null;
+            for (Field f : nmsItemClass.getDeclaredFields()) {
+                if (f.getType() == int.class) {
+                    String name = f.getName().toLowerCase();
+                    if (name.contains("delay") || name.equals("e") || name.equals("bv")) {
+                        pickupDelayField = f;
+                        break;
+                    }
+                }
+            }
+
+            if (pickupDelayField == null) {
+                int intFieldIndex = 0;
+                for (Field f : nmsItemClass.getDeclaredFields()) {
+                    if (f.getType() == int.class) {
+                        if (intFieldIndex == 2) {
+                            pickupDelayField = f;
+                            break;
+                        }
+                        intFieldIndex++;
+                    }
+                }
+            }
+
+            cachedPickupDelayField = pickupDelayField;
+            return pickupDelayField;
+        }
+    }
+
+    // ========================
+    // 枚举
+    // ========================
+
     public enum ItemSourceType {
-        PLAYER_DROP,
-        NATURAL_DROP,
-        INSTANT_PICKUP
+        PLAYER_DROP,      // 玩家丢弃
+        NATURAL_DROP,     // 怪物死亡、方块破坏
+        INSTANT_PICKUP,   // 其他所有（命令、投掷器、漏斗等）
+        UNKNOWN           // 临时状态，1 tick 后转为 INSTANT_PICKUP
     }
 }
