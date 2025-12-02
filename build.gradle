@@ -1,0 +1,38 @@
+plugins {
+    id 'java'
+}
+
+group = 'pickup'
+version = '1.0'
+
+
+sourceCompatibility = JavaVersion.VERSION_21
+targetCompatibility = JavaVersion.VERSION_21
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'PaperMC'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    compileOnly 'io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT'
+
+    compileOnly 'net.kyori:adventure-api:4.17.0'
+    compileOnly 'net.kyori:adventure-platform-api:4.3.3'
+}
+
+jar {
+    archiveFileName = 'PickUp.jar'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    // ✅ 不需要手动 from resources —— Gradle 默认已包含
+    // ✅ 不需要 Main-Class —— Bukkit 插件由 plugin.yml 驱动
+}
+
+// ✅ 禁用测试（如果你没写单元测试）
+tasks.named('test') {
+    enabled = false
+}

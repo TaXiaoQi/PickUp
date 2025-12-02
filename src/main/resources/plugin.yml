@@ -1,0 +1,25 @@
+name: PickUp
+version: 1.0
+main: pickup.PickUp
+api-version: 1.20
+author: 小奇
+description: 自定义拾取插件
+
+commands:
+  up:
+    description: 管理拾取插件
+    usage: |
+      /<command> reload - 重载配置
+      /<command> false - 关闭插件拾取（恢复原版）
+      /<command> true - 开启插件拾取（禁止原版）
+      /<command> status - 查看插件状态
+    permission: pickup.admin
+    permission-message: §c你没有权限使用此命令！
+  mc:
+    description: 服务器管理命令（含重启）
+    usage: /<command> [reload|true|false|status]
+    permission: pickup.admin
+permissions:
+  pickup.admin:
+    description: 允许管理拾取插件
+    default: op
