@@ -8,10 +8,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-/**
- * 多版本兼容的拾取动画发送工具（1.16.5 ~ 1.21.x）
- * 修复了 1.20.5+ 因版本判断错误导致动画不播放的问题。
- */
 public final class PacketUtils {
 
     private static final String VERSION = Bukkit.getServer().getClass().getPackage().getName();
@@ -41,7 +37,6 @@ public final class PacketUtils {
             sendPacket(connection, packet);
 
         } catch (Exception e) {
-            // 建议替换为插件 logger，但至少打印错误
             e.printStackTrace();
         }
     }
@@ -99,7 +94,6 @@ public final class PacketUtils {
                     Field connectionField = null;
 
                     if (IS_1_17_PLUS) {
-                        // 1.17+: 查找 ServerGamePacketListenerImpl 类型字段
                         for (Field f : playerClass.getDeclaredFields()) {
                             if (f.getType().getSimpleName().equals("ServerGamePacketListenerImpl")) {
                                 f.setAccessible(true);
@@ -108,7 +102,6 @@ public final class PacketUtils {
                             }
                         }
                     } else {
-                        // 1.16.5: 直接获取 playerConnection
                         connectionField = playerClass.getDeclaredField("playerConnection");
                         connectionField.setAccessible(true);
                     }
@@ -124,12 +117,12 @@ public final class PacketUtils {
     }
 
     private static void sendPacket(Object connection, Object packet) throws Exception {
+        Method sendMethod;
         if (IS_1_17_PLUS) {
-            Method sendMethod = connection.getClass().getMethod("send", Class.forName("net.minecraft.network.protocol.Packet"));
-            sendMethod.invoke(connection, packet);
+            sendMethod = connection.getClass().getMethod("send", Class.forName("net.minecraft.network.protocol.Packet"));
         } else {
-            Method sendMethod = connection.getClass().getMethod("sendPacket", Class.forName(VERSION + ".Packet"));
-            sendMethod.invoke(connection, packet);
+            sendMethod = connection.getClass().getMethod("sendPacket", Class.forName(VERSION + ".Packet"));
         }
+        sendMethod.invoke(connection, packet);
     }
 }
