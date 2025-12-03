@@ -150,8 +150,8 @@ public class PickUp extends JavaPlugin {
     }
 
     public boolean isPickupActive() {
-        if (stoppedByCommand) return false;
-        return getConfig().getBoolean("enabled", true);
+        if (stoppedByCommand) return true;
+        return !getConfig().getBoolean("enabled", true);
     }
 
     // ========== Getter 方法 ==========

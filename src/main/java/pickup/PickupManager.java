@@ -80,7 +80,7 @@ public class PickupManager implements Listener {
             activePlayerUpdater = new BukkitRunnable() {
                 @Override
                 public void run() {
-                    if (!plugin.isPickupActive()) {
+                    if (plugin.isPickupActive()) {
                         activePlayers.clear();
                         return;
                     }
@@ -115,7 +115,7 @@ public class PickupManager implements Listener {
             itemDetectionTask = new BukkitRunnable() {
                 @Override
                 public void run() {
-                    if (!plugin.isPickupActive()) return;
+                    if (plugin.isPickupActive()) return;
 
                     for (Map.Entry<World, Set<Item>> entry : activeItemsByWorld.entrySet()) {
                         World world = entry.getKey();
@@ -231,7 +231,7 @@ public class PickupManager implements Listener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onItemSpawn(ItemSpawnEvent event) {
         // ✅ 关键：插件未激活时，完全不干预！
-        if (!plugin.isPickupActive()) {
+        if (plugin.isPickupActive()) {
             return; // 让原版自由处理（默认 delay=10）
         }
 
@@ -292,7 +292,7 @@ public class PickupManager implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPlayerDropItem(PlayerDropItemEvent event) {
-        if (!plugin.isPickupActive()) return;
+        if (plugin.isPickupActive()) return;
         Item item = event.getItemDrop();
         if (item.isDead()) return;
 
@@ -312,7 +312,7 @@ public class PickupManager implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityDeath(EntityDeathEvent event) {
-        if (!plugin.isPickupActive()) return;
+        if (plugin.isPickupActive()) return;
         if (event.getDrops().isEmpty()) return;
 
         Location loc = event.getEntity().getLocation();
@@ -340,7 +340,7 @@ public class PickupManager implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockDropItem(BlockDropItemEvent event) {
-        if (!plugin.isPickupActive()) return;
+        if (plugin.isPickupActive()) return;
         long currentTick = event.getBlock().getWorld().getFullTime();
 
         for (Item item : event.getItems()) {
@@ -361,7 +361,7 @@ public class PickupManager implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
-        if (!plugin.isPickupActive() || !plugin.isPlayerDriven()) return;
+        if (plugin.isPickupActive() || !plugin.isPlayerDriven()) return;
 
         Player player = event.getPlayer();
         if (player.getGameMode() == GameMode.SPECTATOR) return;
