@@ -317,6 +317,7 @@ public class PickupManager implements Listener {
 
         Location loc = event.getEntity().getLocation();
         World world = loc.getWorld();
+        @SuppressWarnings("unused")
         long currentTick = world.getFullTime();
 
         // 延迟1 tick，等物品生成后再打标
