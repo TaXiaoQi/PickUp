@@ -55,6 +55,9 @@ public class PickupManager implements Listener {
     public PickupManager(PickUp plugin) {
         this.plugin = plugin;
     }
+    private CustomItemMerger getCustomItemMerger() {
+        return plugin.getItemMerger();
+    }
 
     public void loadConfig() {
         double range = plugin.getPickupRange();
@@ -257,6 +260,12 @@ public class PickupManager implements Listener {
                 if (ItemSourceType.UNKNOWN.name().equals(current)) {
                     pdc2.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.INSTANT_PICKUP.name());
                 }
+
+                // ✅ 新增：通知 CM
+                CustomItemMerger merger = getCustomItemMerger();
+                if (merger != null) {
+                    merger.notifyItemReady(item);
+                }
             }
         }, 2L);
     }
@@ -290,10 +299,15 @@ public class PickupManager implements Listener {
         PersistentDataContainer pdc = item.getPersistentDataContainer();
         long currentTick = item.getWorld().getFullTime();
 
-        // ✅ 强制设置完整标记
         pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, currentTick);
         pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.PLAYER_DROP.name());
         pdc.set(DROPPED_BY_KEY, PersistentDataType.STRING, event.getPlayer().getUniqueId().toString());
+
+        // ✅ 立即通知（标签已确定）
+        CustomItemMerger merger = getCustomItemMerger();
+        if (merger != null) {
+            merger.notifyItemReady(item);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -313,7 +327,11 @@ public class PickupManager implements Listener {
                     String source = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
                     if ("UNKNOWN".equals(source)) {
                         pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
-                        // ✅ 不再设置 SPAWN_TICK_KEY！
+                        // ✅ 通知 CM（标签刚设完）
+                        CustomItemMerger merger = getCustomItemMerger();
+                        if (merger != null) {
+                            merger.notifyItemReady(item);
+                        }
                     }
                 }
             }
@@ -329,9 +347,14 @@ public class PickupManager implements Listener {
             if (item.isDead()) continue;
             PersistentDataContainer pdc = item.getPersistentDataContainer();
 
-            // ✅ 强制设置完整标记
             pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, currentTick);
             pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
+
+            // ✅ 立即通知
+            CustomItemMerger merger = getCustomItemMerger();
+            if (merger != null) {
+                merger.notifyItemReady(item);
+            }
         }
     }
 
@@ -538,10 +561,6 @@ public class PickupManager implements Listener {
             cachedPickupDelayField = pickupDelayField;
             return pickupDelayField;
         }
-    }
-
-    public Map<World, Set<Item>> getActiveItemsByWorld() {
-        return activeItemsByWorld;
     }
 
     public enum ItemSourceType {

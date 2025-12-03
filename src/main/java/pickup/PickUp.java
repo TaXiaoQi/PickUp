@@ -126,12 +126,11 @@ public class PickUp extends JavaPlugin {
     }
 
     private void initializeItemMerger() {
-        if (pickupManager == null) return; // 安全检查
+        if (pickupManager == null) return;
         this.itemMerger = new CustomItemMerger(
-                this,
-                pickupManager.getActiveItemsByWorld(),
-                itemMergeRange,
-                itemMergeIntervalTicks
+                this,                     // plugin
+                itemMergeRange,           // merge range
+                itemMergeIntervalTicks    // interval ticks
         );
         this.itemMerger.start();
     }
@@ -156,10 +155,6 @@ public class PickUp extends JavaPlugin {
         return getConfig().getBoolean("enabled", true);
     }
 
-    public boolean isStoppedByCommand() {
-        return stoppedByCommand;
-    }
-
     // ========== Getter 方法 ==========
     public boolean isPlayerDriven() { return playerDriven; }
     public double getPickupRange() { return pickupRange; }
@@ -171,4 +166,6 @@ public class PickUp extends JavaPlugin {
     public int getPlayerDropDelayTicks() { return playerDropDelayTicks; }
     public int getNaturalDropDelayTicks() { return naturalDropDelayTicks; }
     public int getInstantPickupDelayTicks() { return instantPickupDelayTicks; }
+    public CustomItemMerger getItemMerger() {return itemMerger;}
+    public boolean isStoppedByCommand() {return stoppedByCommand;}
 }
