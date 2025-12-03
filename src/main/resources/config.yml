@@ -21,14 +21,25 @@ pickup:
 # 驱动模式（决定拾取如何触发）
 # ========================
 mode:
-  # 启用“玩家移动触发拾取”（低延迟，适合小服）
+  # 启用“玩家移动触发拾取”
   player-driven: true
   # 检查频率（ticks）：值越小响应越快，CPU越高
   player-scan-interval: 6
 
-  # 启用“物品主动寻找玩家”（覆盖静止玩家，适合大服）
+  # 启用“物品主动寻找玩家”
   item-driven: true
   # 物品生成后最多活跃多少 ticks
   item-active-duration: 60
   # 拾取尝试频率（ticks）
   item-check-interval: 2
+
+# ========================
+#     自定义物品合并设置
+# ========================
+custom-item-merge:
+  # 是否启用高性能物品自动合并（减少实体数量）
+  enabled: true
+  # 合并检测半径（方块），仅当两个物品距离 ≤ 此值且 isSimilar() 时才合并
+  range: 1.0
+  # 合并任务执行间隔（ticks），值越小合并越及时，CPU 开销略增
+  interval-ticks: 10

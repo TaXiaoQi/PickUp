@@ -1,5 +1,6 @@
 package pickup;
 
+import org.bukkit.plugin.Plugin;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -23,7 +24,7 @@ public final class PacketUtils {
 
     private PacketUtils() {}
 
-    public static void sendPickupAnimation(Player player, Entity item, int amount) {
+    public static void sendPickupAnimation(Plugin plugin, Player player, Entity item, int amount) {
         try {
             Object nmsPlayer = getHandle(player);
             Object nmsItem = getHandle(item);
@@ -37,7 +38,8 @@ public final class PacketUtils {
             sendPacket(connection, packet);
 
         } catch (Exception e) {
-            e.printStackTrace();
+            plugin.getLogger().log(java.util.logging.Level.WARNING,
+                    "Failed to send pickup animation packet", e);
         }
     }
 
@@ -126,3 +128,5 @@ public final class PacketUtils {
         sendMethod.invoke(connection, packet);
     }
 }
+
+

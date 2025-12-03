@@ -227,36 +227,57 @@ public class PickupManager implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onItemSpawn(ItemSpawnEvent event) {
-        if (!plugin.isPickupActive()) return;
+        // ✅ 关键：插件未激活时，完全不干预！
+        if (!plugin.isPickupActive()) {
+            return; // 让原版自由处理（默认 delay=10）
+        }
+
         Item item = event.getEntity();
         if (item.isDead()) return;
 
         PersistentDataContainer pdc = item.getPersistentDataContainer();
 
-        // ✅ 关键：如果已经有标记（来自 HIGHEST 事件），则不设置 UNKNOWN
         if (!pdc.has(SOURCE_KEY, PersistentDataType.STRING)) {
             long currentTick = item.getWorld().getFullTime();
             pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, currentTick);
             pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.UNKNOWN.name());
         }
 
+        // ✅ 只有启用时才锁死 pickupDelay
         setPickupDelayToMax(item);
 
         if (plugin.isItemDrivenEnabled()) {
             activeItemsByWorld.computeIfAbsent(item.getWorld(), w -> ConcurrentHashMap.newKeySet()).add(item);
         }
 
-        // ✅ 延迟 2L，但只转换真正的 UNKNOWN
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!item.isDead()) {
                 PersistentDataContainer pdc2 = item.getPersistentDataContainer();
                 String current = pdc2.get(SOURCE_KEY, PersistentDataType.STRING);
-                // ✅ 只转换 UNKNOWN，不转换已有的 PLAYER_DROP 或 NATURAL_DROP
                 if (ItemSourceType.UNKNOWN.name().equals(current)) {
                     pdc2.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.INSTANT_PICKUP.name());
                 }
             }
         }, 2L);
+    }
+
+    public void restoreOriginalPickupDelay() {
+        for (World world : Bukkit.getWorlds()) {
+            for (Entity entity : world.getEntities()) {
+                if (entity instanceof Item item && !item.isDead()) {
+                    PersistentDataContainer pdc = item.getPersistentDataContainer();
+                    // 只修复被本插件标记过的物品（避免影响其他插件）
+                    if (pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG) || pdc.has(SOURCE_KEY, PersistentDataType.STRING)) {
+                        try {
+                            item.setPickupDelay(10); // 原版默认值
+                        } catch (Exception e) {
+                            // 忽略异常（如版本兼容问题）
+                        }
+                    }
+                }
+            }
+        }
+        plugin.getLogger().info("已恢复所有被管理物品的拾取延迟");
     }
 
 
@@ -352,7 +373,6 @@ public class PickupManager implements Listener {
     private void performPickup(Player player, Item item) {
         if (item.isDead()) return;
 
-        // === 你的全部自定义逻辑 ===
         PersistentDataContainer pdc = item.getPersistentDataContainer();
         Long spawnTickObj = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
         long currentTick = player.getWorld().getFullTime();
@@ -372,8 +392,7 @@ public class PickupManager implements Listener {
                 if (ticksSinceSpawn < selfImmuneTicks) return;
             }
         }
-        int amount = item.getItemStack().getAmount();
-        PacketUtils.sendPickupAnimation(player, item, amount);
+
         attemptPickup(player, item);
     }
 
@@ -383,63 +402,88 @@ public class PickupManager implements Listener {
         if (originalStack.getType() == Material.AIR || originalStack.getAmount() <= 0) return;
 
         PlayerInventory inv = player.getInventory();
-        ItemStack stack = originalStack.clone(); // 操作副本，避免污染原实体
-
+        ItemStack stack = originalStack.clone();
         int taken = 0;
 
-        // === 1. 优先检查副手是否可合并（同类且未满）===
         ItemStack offHand = inv.getItemInOffHand();
         if (!offHand.getType().isAir() && offHand.isSimilar(stack)) {
-            int spaceInOffHand = stack.getMaxStackSize() - offHand.getAmount();
-            if (spaceInOffHand > 0) {
-                int amountToMove = Math.min(spaceInOffHand, stack.getAmount());
-                // 合并到副手
-                offHand.setAmount(offHand.getAmount() + amountToMove);
+            int space = Math.min(stack.getMaxStackSize() - offHand.getAmount(), stack.getAmount());
+            if (space > 0) {
+                offHand.setAmount(offHand.getAmount() + space);
                 inv.setItemInOffHand(offHand);
-                stack.setAmount(stack.getAmount() - amountToMove);
-                taken += amountToMove;
+                stack.setAmount(stack.getAmount() - space);
+                taken += space;
             }
         }
 
-        // === 2. 尝试放入主物品栏（36格）===
         if (stack.getAmount() > 0) {
-            Map<Integer, ItemStack> leftover = inv.addItem(stack);
-            int leftoverAmount = leftover.values().stream().mapToInt(ItemStack::getAmount).sum();
-            taken += (stack.getAmount() - leftoverAmount);
-            // 更新 stack 为真正剩余的量
-            if (leftoverAmount > 0) {
-                stack = leftover.values().iterator().next().clone();
-            } else {
-                stack.setAmount(0);
+            int remaining = stack.getAmount();
+            ItemStack toPlace = stack.clone();
+
+            for (int slot = 0; slot < 36; slot++) {
+                if (remaining <= 0) break;
+                ItemStack existing = inv.getItem(slot);
+                if (existing != null && existing.isSimilar(toPlace) && existing.getAmount() < existing.getMaxStackSize()) {
+                    int space = Math.min(existing.getMaxStackSize() - existing.getAmount(), remaining);
+                    existing.setAmount(existing.getAmount() + space);
+                    inv.setItem(slot, existing);
+                    remaining -= space;
+                    taken += space;
+                }
             }
+
+            if (remaining > 0) {
+                int heldSlot = player.getInventory().getHeldItemSlot(); // 0~8
+                ItemStack heldItem = inv.getItem(heldSlot);
+                if (heldItem == null || heldItem.getType() == Material.AIR) {
+                    int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
+                    inv.setItem(heldSlot, new ItemStack(toPlace.getType(), placeAmount));
+                    remaining -= placeAmount;
+                    taken += placeAmount;
+                }
+            }
+
+            if (remaining > 0) {
+                for (int slot = 0; slot < 9; slot++) {
+                    if (remaining <= 0) break;
+                    ItemStack existing = inv.getItem(slot);
+                    if (existing == null || existing.getType() == Material.AIR) {
+                        int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
+                        inv.setItem(slot, new ItemStack(toPlace.getType(), placeAmount));
+                        remaining -= placeAmount;
+                        taken += placeAmount;
+                    }
+                }
+            }
+
+            if (remaining > 0) {
+                for (int slot = 9; slot < 36; slot++) {
+                    if (remaining <= 0) break;
+                    ItemStack existing = inv.getItem(slot);
+                    if (existing == null || existing.getType() == Material.AIR) {
+                        int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
+                        inv.setItem(slot, new ItemStack(toPlace.getType(), placeAmount));
+                        remaining -= placeAmount;
+                        taken += placeAmount;
+                    }
+                }
+            }
+
+            stack.setAmount(Math.max(remaining, 0));
         }
 
-        // === 3. 如果还有剩余，且副手为空 → 放入副手===
-        if (stack.getAmount() > 0 && inv.getItemInOffHand().getType().isAir()) {
-            int amountToMove = Math.min(stack.getMaxStackSize(), stack.getAmount());
-            inv.setItemInOffHand(new ItemStack(stack.getType(), amountToMove));
-            stack.setAmount(stack.getAmount() - amountToMove);
-            taken += amountToMove;
-        }
-
-        // === 4. 更新物品实体状态 ===
         if (taken > 0) {
             if (stack.getAmount() <= 0) {
-                item.remove(); // 全部拾取
+                item.remove();
             } else {
-                // 还有剩余，更新物品堆栈
                 item.setItemStack(stack);
             }
 
-            // 播放拾取音效
+            PacketUtils.sendPickupAnimation(plugin, player, item, taken);
             float pitch = (float) (0.8 + Math.random() * 0.4);
             player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.1f, pitch);
         }
     }
-
-    // ========================
-    // 反射 & 工具方法
-    // ========================
 
     private void setPickupDelayToMax(Item item) {
         try {
@@ -496,9 +540,9 @@ public class PickupManager implements Listener {
         }
     }
 
-    // ========================
-    // 枚举
-    // ========================
+    public Map<World, Set<Item>> getActiveItemsByWorld() {
+        return activeItemsByWorld;
+    }
 
     public enum ItemSourceType {
         PLAYER_DROP,      // 玩家丢弃
@@ -507,3 +551,5 @@ public class PickupManager implements Listener {
         UNKNOWN           // 临时状态，1 tick 后转为 INSTANT_PICKUP
     }
 }
+
+
