@@ -358,9 +358,6 @@ public class PickupManager implements Listener {
         }
     }
 
-    // ========================
-    // 拾取逻辑（玩家驱动 + 通用）
-    // ========================
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {

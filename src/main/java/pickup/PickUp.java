@@ -28,8 +28,6 @@ public class PickUp extends JavaPlugin {
     private int naturalDropDelayTicks;
     private int instantPickupDelayTicks;
 
-    // ========== 物品合并配置 ==========
-    private boolean itemMergeEnabled;
     private double itemMergeRange;
     private int itemMergeIntervalTicks;
 
@@ -99,7 +97,8 @@ public class PickUp extends JavaPlugin {
         pickupAttemptIntervalTicks = Math.max(1, config.getInt("mode.item-check-interval", 2));
 
         // 物品合并配置
-        itemMergeEnabled = config.getBoolean("custom-item-merge.enabled", true);
+        // ========== 物品合并配置 ==========
+        boolean itemMergeEnabled = config.getBoolean("custom-item-merge.enabled", true);
         itemMergeRange = config.getDouble("custom-item-merge.range", 1.0);
         itemMergeIntervalTicks = config.getInt("custom-item-merge.interval-ticks", 10);
 
