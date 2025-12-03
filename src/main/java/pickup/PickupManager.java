@@ -22,12 +22,7 @@ import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * 拾取管理器：实现三类独立配置的智能拾取系统
- * - PLAYER_DROP: 玩家丢弃（可设自身免疫）
- * - NATURAL_DROP: 怪物死亡 / 挖矿掉落
- * - INSTANT_PICKUP: 其他所有来源（命令、投掷器、漏斗等）
- */
+// 拾取类
 public class PickupManager implements Listener {
     private final PickUp plugin;
     private double pickupRangeSq;
@@ -39,16 +34,13 @@ public class PickupManager implements Listener {
     private boolean active = false;
     private static volatile Field cachedPickupDelayField = null;
 
-    // NBT Keys
     private static final NamespacedKey SPAWN_TICK_KEY = new NamespacedKey("pickup", "spawn_tick");
     private static final NamespacedKey DROPPED_BY_KEY = new NamespacedKey("pickup", "dropped_by");
     private static final NamespacedKey SOURCE_KEY = new NamespacedKey("pickup", "source");
 
-    // 玩家驱动模式
     private final Set<UUID> activePlayers = ConcurrentHashMap.newKeySet();
     private BukkitRunnable activePlayerUpdater = null;
 
-    // 物品驱动模式
     private final Map<World, Set<Item>> activeItemsByWorld = new ConcurrentHashMap<>();
     private BukkitRunnable itemDetectionTask = null;
 
@@ -74,7 +66,6 @@ public class PickupManager implements Listener {
         active = true;
         loadConfig();
 
-        // ========== 玩家驱动模式 ==========
         if (plugin.isPlayerDriven()) {
             int scanInterval = Math.max(1, plugin.getPlayerDrivenScanIntervalTicks());
             activePlayerUpdater = new BukkitRunnable() {
@@ -105,7 +96,6 @@ public class PickupManager implements Listener {
             activePlayerUpdater.runTaskTimer(plugin, 0L, scanInterval);
         }
 
-        // ========== 物品驱动模式 ==========
         if (plugin.isItemDrivenEnabled()) {
             for (World world : Bukkit.getWorlds()) {
                 activeItemsByWorld.put(world, ConcurrentHashMap.newKeySet());
@@ -145,7 +135,6 @@ public class PickupManager implements Listener {
                             String sourceStr = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
                             ItemSourceType source = parseSource(sourceStr);
 
-                            // UNKNOWN 不允许拾取（应已被转为 INSTANT_PICKUP）
                             if (source == ItemSourceType.UNKNOWN) {
                                 continue;
                             }
@@ -230,9 +219,8 @@ public class PickupManager implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onItemSpawn(ItemSpawnEvent event) {
-        // ✅ 关键：插件未激活时，完全不干预！
         if (plugin.isPickupDisabled()) {
-            return; // 让原版自由处理（默认 delay=10）
+            return;
         }
 
         Item item = event.getEntity();
@@ -246,7 +234,6 @@ public class PickupManager implements Listener {
             pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.UNKNOWN.name());
         }
 
-        // ✅ 只有启用时才锁死 pickupDelay
         setPickupDelayToMax(item);
 
         if (plugin.isItemDrivenEnabled()) {
@@ -261,13 +248,16 @@ public class PickupManager implements Listener {
                     pdc2.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.INSTANT_PICKUP.name());
                 }
 
-                // ✅ 新增：通知 CM
                 CustomItemMerger merger = getCustomItemMerger();
                 if (merger != null) {
                     merger.notifyItemReady(item);
                 }
             }
         }, 2L);
+        Material type = item.getItemStack().getType();
+        if (ContainerMaterials.SET.contains(type)) {
+            item.setItemStack(item.getItemStack());
+        }
     }
 
     public void restoreOriginalPickupDelay() {
@@ -275,12 +265,11 @@ public class PickupManager implements Listener {
             for (Entity entity : world.getEntities()) {
                 if (entity instanceof Item item && !item.isDead()) {
                     PersistentDataContainer pdc = item.getPersistentDataContainer();
-                    // 只修复被本插件标记过的物品（避免影响其他插件）
                     if (pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG) || pdc.has(SOURCE_KEY, PersistentDataType.STRING)) {
                         try {
-                            item.setPickupDelay(10); // 原版默认值
+                            item.setPickupDelay(10);
                         } catch (Exception e) {
-                            // 忽略异常（如版本兼容问题）
+                            //
                         }
                     }
                 }
@@ -303,7 +292,6 @@ public class PickupManager implements Listener {
         pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.PLAYER_DROP.name());
         pdc.set(DROPPED_BY_KEY, PersistentDataType.STRING, event.getPlayer().getUniqueId().toString());
 
-        // ✅ 立即通知（标签已确定）
         CustomItemMerger merger = getCustomItemMerger();
         if (merger != null) {
             merger.notifyItemReady(item);
@@ -320,7 +308,6 @@ public class PickupManager implements Listener {
         @SuppressWarnings("unused")
         long currentTick = world.getFullTime();
 
-        // 延迟1 tick，等物品生成后再打标
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             for (Entity entity : world.getNearbyEntities(loc, 2.0, 2.0, 2.0)) {
                 if (entity instanceof Item item && !item.isDead()) {
@@ -351,7 +338,6 @@ public class PickupManager implements Listener {
             pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, currentTick);
             pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
 
-            // ✅ 立即通知
             CustomItemMerger merger = getCustomItemMerger();
             if (merger != null) {
                 merger.notifyItemReady(item);
@@ -565,7 +551,7 @@ public class PickupManager implements Listener {
         PLAYER_DROP,      // 玩家丢弃
         NATURAL_DROP,     // 怪物死亡、方块破坏
         INSTANT_PICKUP,   // 其他所有（命令、投掷器、漏斗等）
-        UNKNOWN           // 临时状态，1 tick 后转为 INSTANT_PICKUP
+        UNKNOWN           // 初始状态
     }
 }
 

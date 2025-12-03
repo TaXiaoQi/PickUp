@@ -9,6 +9,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+// 拾取动画类
 public final class PacketUtils {
 
     private static final String VERSION = Bukkit.getServer().getClass().getPackage().getName();
@@ -16,7 +17,6 @@ public final class PacketUtils {
     private static final boolean IS_1_17_PLUS = IS_NEW_CRAFTBUKKIT ||
             VERSION.compareTo("org.bukkit.craftbukkit.v1_17_R1") >= 0;
 
-    // 反射缓存
     private static volatile Method CACHED_GET_HANDLE = null;
     private static volatile Method CACHED_GET_ID = null;
     private static volatile Constructor<?> CACHED_PACKET_CONSTRUCTOR = null;

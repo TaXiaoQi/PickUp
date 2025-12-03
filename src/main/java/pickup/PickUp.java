@@ -6,24 +6,23 @@ import org.bukkit.configuration.file.FileConfiguration;
 import java.io.File;
 import java.util.Objects;
 
+
+// 主类
 public class PickUp extends JavaPlugin {
 
     private PickupManager pickupManager;
     private boolean stoppedByCommand = false;
     private CustomItemMerger itemMerger;
 
-    // ========== 玩家驱动模式配置 ==========
     private boolean playerDriven;
     private double pickupRange;
     private int selfImmuneTicks;
     private int playerDrivenScanIntervalTicks;
 
-    // ========== 物品驱动模式配置 ==========
     private boolean itemDrivenEnabled;
     private int activeDetectionTicks;
     private int pickupAttemptIntervalTicks;
 
-    // ========== 不同来源物品的拾取延迟（tick） ==========
     private int playerDropDelayTicks;
     private int naturalDropDelayTicks;
     private int instantPickupDelayTicks;
@@ -33,7 +32,6 @@ public class PickUp extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        // 清理重启标记
         File restartFlag = new File("restart.flag");
         if (restartFlag.exists()) {
             if (restartFlag.delete()) {
@@ -43,23 +41,18 @@ public class PickUp extends JavaPlugin {
             }
         }
 
-        // 加载配置（必须在创建 manager 前完成）
         saveDefaultConfig();
         reloadPickup();
 
-        // 初始化核心管理器
         this.pickupManager = new PickupManager(this);
         getServer().getPluginManager().registerEvents(pickupManager, this);
 
-        // ✅ 关键修复：首次启动时必须启用拾取系统！
         if (!isPickupDisabled()) {
             pickupManager.enable();
         }
 
-        // 初始化物品合并器（如果启用）
         initializeItemMerger();
 
-        // 注册命令
         ReloadCommand executor = new ReloadCommand(this);
         Objects.requireNonNull(getCommand("up")).setExecutor(executor);
         Objects.requireNonNull(getCommand("mc")).setExecutor(executor);
@@ -85,7 +78,6 @@ public class PickUp extends JavaPlugin {
         reloadConfig();
         FileConfiguration config = getConfig();
 
-        // 拾取行为
         pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup.range", 1.5)));
         selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 5));
 
@@ -93,7 +85,6 @@ public class PickUp extends JavaPlugin {
         naturalDropDelayTicks = Math.max(0, config.getInt("pickup.delays.natural-drop", 5));
         instantPickupDelayTicks = Math.max(0, config.getInt("pickup.delays.instant-pickup", 0));
 
-        // 驱动模式
         playerDriven = config.getBoolean("mode.player-driven", true);
         playerDrivenScanIntervalTicks = Math.max(1, config.getInt("mode.player-scan-interval", 6));
 
@@ -101,22 +92,18 @@ public class PickUp extends JavaPlugin {
         activeDetectionTicks = Math.max(0, config.getInt("mode.item-active-duration", 60));
         pickupAttemptIntervalTicks = Math.max(1, config.getInt("mode.item-check-interval", 2));
 
-        // 物品合并配置
-        // ========== 物品合并配置 ==========
         boolean itemMergeEnabled = config.getBoolean("custom-item-merge.enabled", true);
         itemMergeRange = config.getDouble("custom-item-merge.range", 1.0);
         itemMergeIntervalTicks = config.getInt("custom-item-merge.interval-ticks", 10);
 
-        // 重载 PickupManager 配置
         if (pickupManager != null) {
-            pickupManager.loadConfig(); // 总是重新加载配置
+            pickupManager.loadConfig();
 
-            // ✅ 无论之前是否 active，只要现在 enabled，就启用
             if (!isPickupDisabled()) {
                 if (pickupManager.isActive()) {
-                    pickupManager.disable(); // 先停旧的
+                    pickupManager.disable();
                 }
-                pickupManager.enable(); // 再启新的
+                pickupManager.enable();
             } else {
                 if (pickupManager.isActive()) {
                     pickupManager.disable();
@@ -125,7 +112,6 @@ public class PickUp extends JavaPlugin {
             }
         }
 
-        // 重载物品合并器
         if (itemMerger != null) {
             itemMerger.stop();
             itemMerger = null;
@@ -140,9 +126,9 @@ public class PickUp extends JavaPlugin {
     private void initializeItemMerger() {
         if (pickupManager == null) return;
         this.itemMerger = new CustomItemMerger(
-                this,                     // plugin
-                itemMergeRange,           // merge range
-                itemMergeIntervalTicks    // interval ticks
+                this,
+                itemMergeRange,
+                itemMergeIntervalTicks
         );
         this.itemMerger.start();
     }
