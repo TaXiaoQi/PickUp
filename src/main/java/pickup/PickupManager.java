@@ -315,7 +315,6 @@ public class PickupManager implements Listener {
                     String source = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
                     if ("UNKNOWN".equals(source)) {
                         pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
-                        // ✅ 通知 CM（标签刚设完）
                         CustomItemMerger merger = getCustomItemMerger();
                         if (merger != null) {
                             merger.notifyItemReady(item);
@@ -409,9 +408,10 @@ public class PickupManager implements Listener {
         if (originalStack.getType() == Material.AIR || originalStack.getAmount() <= 0) return;
 
         PlayerInventory inv = player.getInventory();
-        ItemStack stack = originalStack.clone();
+        ItemStack stack = originalStack.clone(); // 完整副本，含 NBT
         int taken = 0;
 
+        // === 1. 副手 ===
         ItemStack offHand = inv.getItemInOffHand();
         if (!offHand.getType().isAir() && offHand.isSimilar(stack)) {
             int space = Math.min(stack.getMaxStackSize() - offHand.getAmount(), stack.getAmount());
@@ -423,14 +423,15 @@ public class PickupManager implements Listener {
             }
         }
 
+        // 如果还有剩余，尝试主背包
         if (stack.getAmount() > 0) {
             int remaining = stack.getAmount();
-            ItemStack toPlace = stack.clone();
 
+            // === 2. 主背包（0-35）合并相似堆 ===
             for (int slot = 0; slot < 36; slot++) {
                 if (remaining <= 0) break;
                 ItemStack existing = inv.getItem(slot);
-                if (existing != null && existing.isSimilar(toPlace) && existing.getAmount() < existing.getMaxStackSize()) {
+                if (existing != null && existing.isSimilar(stack) && existing.getAmount() < existing.getMaxStackSize()) {
                     int space = Math.min(existing.getMaxStackSize() - existing.getAmount(), remaining);
                     existing.setAmount(existing.getAmount() + space);
                     inv.setItem(slot, existing);
@@ -439,53 +440,60 @@ public class PickupManager implements Listener {
                 }
             }
 
+            // === 3. 快捷栏空位（优先手持位）===
             if (remaining > 0) {
                 int heldSlot = player.getInventory().getHeldItemSlot(); // 0~8
                 ItemStack heldItem = inv.getItem(heldSlot);
                 if (heldItem == null || heldItem.getType() == Material.AIR) {
-                    int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
-                    inv.setItem(heldSlot, new ItemStack(toPlace.getType(), placeAmount));
-                    remaining -= placeAmount;
-                    taken += placeAmount;
+                    ItemStack toPlace = stack.clone();
+                    toPlace.setAmount(Math.min(toPlace.getMaxStackSize(), remaining));
+                    inv.setItem(heldSlot, toPlace); // ✅ 保留 NBT！
+                    remaining -= toPlace.getAmount();
+                    taken += toPlace.getAmount();
                 }
             }
 
+            // === 4. 快捷栏其他空位 ===
             if (remaining > 0) {
                 for (int slot = 0; slot < 9; slot++) {
                     if (remaining <= 0) break;
                     ItemStack existing = inv.getItem(slot);
                     if (existing == null || existing.getType() == Material.AIR) {
-                        int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
-                        inv.setItem(slot, new ItemStack(toPlace.getType(), placeAmount));
-                        remaining -= placeAmount;
-                        taken += placeAmount;
+                        ItemStack toPlace = stack.clone();
+                        toPlace.setAmount(Math.min(toPlace.getMaxStackSize(), remaining));
+                        inv.setItem(slot, toPlace); // ✅ 保留 NBT！
+                        remaining -= toPlace.getAmount();
+                        taken += toPlace.getAmount();
                     }
                 }
             }
 
+            // === 5. 主背包空位（9-35）===
             if (remaining > 0) {
                 for (int slot = 9; slot < 36; slot++) {
                     if (remaining <= 0) break;
                     ItemStack existing = inv.getItem(slot);
                     if (existing == null || existing.getType() == Material.AIR) {
-                        int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
-                        inv.setItem(slot, new ItemStack(toPlace.getType(), placeAmount));
-                        remaining -= placeAmount;
-                        taken += placeAmount;
+                        ItemStack toPlace = stack.clone();
+                        toPlace.setAmount(Math.min(toPlace.getMaxStackSize(), remaining));
+                        inv.setItem(slot, toPlace); // ✅ 保留 NBT！
+                        remaining -= toPlace.getAmount();
+                        taken += toPlace.getAmount();
                     }
                 }
             }
 
+            // 更新剩余数量
             stack.setAmount(Math.max(remaining, 0));
         }
 
+        // === 应用结果 ===
         if (taken > 0) {
             if (stack.getAmount() <= 0) {
                 item.remove();
             } else {
                 item.setItemStack(stack);
             }
-
             PacketUtils.sendPickupAnimation(plugin, player, item, taken);
             float pitch = (float) (0.8 + Math.random() * 0.4);
             player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.1f, pitch);
