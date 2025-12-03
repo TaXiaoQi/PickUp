@@ -123,12 +123,12 @@ pickup:
 # 驱动模式（决定拾取如何触发）
 # ========================
 mode:
-  # 启用“玩家移动触发拾取”（低延迟，适合小服）
+  # 启用“玩家移动触发拾取”
   player-driven: true
   # 检查频率（ticks）：值越小响应越快，CPU越高
   player-scan-interval: 6
 
-  # 启用“物品主动寻找玩家”（覆盖静止玩家，适合大服）
+  # 启用“物品主动寻找玩家”
   item-driven: true
   # 物品生成后最多活跃多少 ticks
   item-active-duration: 60
@@ -174,10 +174,10 @@ mode:
 ### 版本兼容性
 最低版本要求：Minecraft 1.14； 兼容：Minecraft 1.14 ~ 1.21.x（Spigot / Paper）
 
-因依赖 <code>PersistentDataContainer</code> 在1.14版首次引入， 1.14以前版本无法加载。
+依赖 <code>PersistentDataContainer</code> 在1.14版首次引入， 1.16.5支持完善，推荐1.16.5版起
 
 ### 红石兼容性
-仅影响玩家拾取行为，漏斗、投掷器、矿车等红石组件仍按原版逻辑处理，确保兼容性。
+可分开设置玩家丢弃、生物或方块掉落、红石组件投放的拾取冷却时长，确保兼容性。
 
 ### 多世界支持
 所有设置自动应用于所有已加载的世界，无需额外配置.
