@@ -51,6 +51,11 @@ public class PickUp extends JavaPlugin {
         this.pickupManager = new PickupManager(this);
         getServer().getPluginManager().registerEvents(pickupManager, this);
 
+        // ✅ 关键修复：首次启动时必须启用拾取系统！
+        if (!isPickupDisabled()) {
+            pickupManager.enable();
+        }
+
         // 初始化物品合并器（如果启用）
         initializeItemMerger();
 
@@ -104,11 +109,19 @@ public class PickUp extends JavaPlugin {
 
         // 重载 PickupManager 配置
         if (pickupManager != null) {
-            if (pickupManager.isActive()) {
-                pickupManager.disable();
-                pickupManager.enable();
+            pickupManager.loadConfig(); // 总是重新加载配置
+
+            // ✅ 无论之前是否 active，只要现在 enabled，就启用
+            if (!isPickupDisabled()) {
+                if (pickupManager.isActive()) {
+                    pickupManager.disable(); // 先停旧的
+                }
+                pickupManager.enable(); // 再启新的
             } else {
-                pickupManager.loadConfig();
+                if (pickupManager.isActive()) {
+                    pickupManager.disable();
+                    pickupManager.restoreOriginalPickupDelay();
+                }
             }
         }
 
@@ -149,9 +162,8 @@ public class PickUp extends JavaPlugin {
         }
     }
 
-    public boolean isPickupActive() {
-        if (stoppedByCommand) return true;
-        return !getConfig().getBoolean("enabled", true);
+    public boolean isPickupDisabled() {
+        return stoppedByCommand || !getConfig().getBoolean("enabled", true);
     }
 
     // ========== Getter 方法 ==========
