@@ -16,6 +16,7 @@ import org.bukkit.inventory.PlayerInventory;
 
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -172,11 +173,16 @@ public class PickupManager {
 
     private void disableVanillaPickup(Item item) {
         try {
-            Field field = getItemPickupDelayField();
-            field.setAccessible(true);
-            field.set(item, Integer.MAX_VALUE);
+            // 获取 NMS ItemEntity 对象
+            Object nmsItem = getGetHandleMethod().invoke(item);
+            // 获取并设置 pickupDelay 字段
+            Field delayField = getItemPickupDelayField();
+            delayField.set(nmsItem, Integer.MAX_VALUE);
         } catch (Exception e) {
-            plugin.getLogger().warning("Failed to disable vanilla pickup delay via reflection.");
+            // 建议降级为 debug 日志，避免刷屏 WARN
+            if (plugin.getConfig().getBoolean("debug", false)) {
+                plugin.getLogger().info("Reflection failed for pickup delay: " + e.getMessage());
+            }
         }
     }
 
@@ -399,9 +405,9 @@ public class PickupManager {
                     PersistentDataContainer pdc = item.getPersistentDataContainer();
                     if (pdc.has(SOURCE_KEY, PersistentDataType.STRING)) {
                         try {
+                            Object nmsItem = getGetHandleMethod().invoke(item);
                             Field field = getItemPickupDelayField();
-                            field.setAccessible(true);
-                            field.set(item, 10); // 恢复默认值（可选）
+                            field.set(nmsItem, 10); // 恢复默认值
                         } catch (Exception ignored) {}
                     }
                 }
@@ -409,7 +415,7 @@ public class PickupManager {
         }
     }
 
-    // ====== 反射工具 ======
+    // ====== 反射工具（增强版）======
     private static volatile Field cachedPickupDelayField = null;
 
     private static Field getItemPickupDelayField() {
@@ -417,36 +423,44 @@ public class PickupManager {
             return cachedPickupDelayField;
         }
 
-        Class<?> itemClass;
+        Class<?> nmsItemClass;
         try {
-            itemClass = Class.forName("net.minecraft.world.entity.item.EntityItem");
-        } catch (ClassNotFoundException e) {
+            // 1.17+
+            nmsItemClass = Class.forName("net.minecraft.world.entity.item.ItemEntity");
+        } catch (ClassNotFoundException e1) {
             try {
-                itemClass = Class.forName("net.minecraft.server." + getNMSVersion() + ".EntityItem");
-            } catch (ClassNotFoundException ex) {
-                throw new RuntimeException("Unsupported Minecraft version for reflection.", ex);
+                // 1.16 及以下（旧 NMS 路径）
+                String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
+                nmsItemClass = Class.forName("net.minecraft.server." + version + ".EntityItem");
+            } catch (Exception e2) {
+                throw new RuntimeException("Unsupported server version for Item pickupDelay reflection.", e2);
             }
         }
 
-        Field field = null;
-        for (Field f : itemClass.getDeclaredFields()) {
-            if (f.getType() == int.class && !f.getName().startsWith("b")) { // heuristic
-                field = f;
-                break;
+        // 常见字段名候选（按版本排序）
+        String[] candidates = {
+                "pickupDelay",   // 未混淆（如开发环境、部分 Paper）
+                "bK",            // 1.17 ~ 1.19.4 (yarn/mojang 混淆)
+                "c",             // 1.20.0 ~ 1.20.4
+                "d",             // 1.20.5+ （观察到的部分版本）
+                "e"              // 预防未来变化
+        };
+
+        for (String fieldName : candidates) {
+            try {
+                Field field = nmsItemClass.getDeclaredField(fieldName);
+                if (field.getType() == int.class) {
+                    field.setAccessible(true);
+                    cachedPickupDelayField = field;
+                    return field;
+                }
+            } catch (NoSuchFieldException ignored) {
+                // try next
             }
         }
 
-        if (field == null) {
-            throw new RuntimeException("Could not find pickupDelay field in EntityItem.");
-        }
-
-        cachedPickupDelayField = field;
-        return field;
-    }
-
-    private static String getNMSVersion() {
-        String pkg = Bukkit.getServer().getClass().getPackage().getName();
-        return pkg.substring(pkg.lastIndexOf('.') + 1);
+        // 所有候选都失败 → 抛出异常（或返回 null 并处理）
+        throw new RuntimeException("Could not find pickupDelay field in " + nmsItemClass.getName());
     }
 
     // ====== 辅助枚举与解析 ======
@@ -472,5 +486,20 @@ public class PickupManager {
             default -> 0;
         };
     }
+
+    private static volatile Method cachedGetHandleMethod = null;
+
+    private static Method getGetHandleMethod() throws Exception {
+        if (cachedGetHandleMethod != null) {
+            return cachedGetHandleMethod;
+        }
+
+        String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
+        Class<?> craftItemClass = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftItem");
+        cachedGetHandleMethod = craftItemClass.getMethod("getHandle");
+        cachedGetHandleMethod.setAccessible(true);
+        return cachedGetHandleMethod;
+    }
+
     public boolean isActive() {return active;}
 }
