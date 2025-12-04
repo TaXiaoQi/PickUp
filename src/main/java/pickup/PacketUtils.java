@@ -130,6 +130,19 @@ public final class PacketUtils {
         }
         sendMethod.invoke(connection, packet);
     }
+
+    public static void sendPickupAnimation(Plugin plugin, Player collector, Entity collectedItem, int amount) {
+        if (collector == null || collectedItem == null || collectedItem.isDead()) {
+            return;
+        }
+        try {
+            Object nmsCollector = getHandle(collector);
+            int collectorId = getEntityId(nmsCollector);
+            sendPickupAnimation(plugin, collector, collectedItem, collectorId, amount);
+        } catch (Exception e) {
+            plugin.getLogger().log(java.util.logging.Level.WARNING, "Failed to send pickup animation (auto ID)", e);
+        }
+    }
 }
 
 

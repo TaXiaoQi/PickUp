@@ -399,39 +399,110 @@ public class PickupManager implements Listener {
     }
 
     private void attemptPickup(Player player, Item item) {
-        if (item.isDead()) return;
-        ItemStack original = item.getItemStack();
-        if (original.getType() == Material.AIR || original.getAmount() <= 0) return;
+        if (item == null || item.isDead()) return;
 
-        int collectorEntityId = player.getEntityId();
-
-        PlayerInventory inv = player.getInventory();
-        Map<Integer, ItemStack> leftover = inv.addItem(original);
-
-        int taken;
-        if (leftover.isEmpty()) {
-            taken = original.getAmount();
-        } else {
-            int totalLeft = leftover.values().stream().mapToInt(ItemStack::getAmount).sum();
-            taken = original.getAmount() - totalLeft;
+        ItemStack originalStack = item.getItemStack();
+        if (originalStack.getType() == Material.AIR || originalStack.getAmount() <= 0) {
+            return;
         }
 
+        PlayerInventory inv = player.getInventory();
+        ItemStack stack = originalStack.clone(); // 完整克隆，保留所有 NBT（潜影盒内容、附魔等）
+        int taken = 0;
+
+        // === Step 1: 尝试合并到副手（仅当副手已有相同物品）===
+        ItemStack offHand = inv.getItemInOffHand();
+        if (!offHand.getType().isAir() && offHand.isSimilar(stack)) {
+            int space = Math.min(stack.getMaxStackSize() - offHand.getAmount(), stack.getAmount());
+            if (space > 0) {
+                offHand.setAmount(offHand.getAmount() + space);
+                inv.setItemInOffHand(offHand);
+                stack.setAmount(stack.getAmount() - space);
+                taken += space;
+            }
+        }
+
+        // === Step 2: 如果还有剩余，尝试放入主背包（36格：0~35）===
+        if (stack.getAmount() > 0) {
+            int remaining = stack.getAmount();
+            ItemStack toPlace = stack.clone(); // toPlace 用于创建新堆，必须保留 NBT
+
+            // 2.1 先尝试合并到已有同类堆叠（遍历全部36格）
+            for (int slot = 0; slot < 36; slot++) {
+                if (remaining <= 0) break;
+                ItemStack existing = inv.getItem(slot);
+                if (existing != null && existing.isSimilar(toPlace) && existing.getAmount() < existing.getMaxStackSize()) {
+                    int space = Math.min(existing.getMaxStackSize() - existing.getAmount(), remaining);
+                    existing.setAmount(existing.getAmount() + space);
+                    inv.setItem(slot, existing);
+                    remaining -= space;
+                    taken += space;
+                }
+            }
+
+            // 2.2 如果还有剩余，尝试放入主手快捷栏（0~8）的空位
+            if (remaining > 0) {
+                int heldSlot = player.getInventory().getHeldItemSlot(); // 通常是 0~8
+                ItemStack heldItem = inv.getItem(heldSlot);
+                if (heldItem == null || heldItem.getType() == Material.AIR) {
+                    int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
+                    ItemStack placed = toPlace.clone(); // ✅ 安全：保留 NBT
+                    placed.setAmount(placeAmount);
+                    inv.setItem(heldSlot, placed);
+                    remaining -= placeAmount;
+                    taken += placeAmount;
+                }
+            }
+
+            // 2.3 再尝试热键栏（0~8）其他空位
+            if (remaining > 0) {
+                for (int slot = 0; slot < 9; slot++) {
+                    if (remaining <= 0) break;
+                    ItemStack existing = inv.getItem(slot);
+                    if (existing == null || existing.getType() == Material.AIR) {
+                        int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
+                        ItemStack placed = toPlace.clone(); // ✅ 安全：保留 NBT
+                        placed.setAmount(placeAmount);
+                        inv.setItem(slot, placed);
+                        remaining -= placeAmount;
+                        taken += placeAmount;
+                    }
+                }
+            }
+
+            // 2.4 最后尝试主背包（9~35）空位
+            if (remaining > 0) {
+                for (int slot = 9; slot < 36; slot++) {
+                    if (remaining <= 0) break;
+                    ItemStack existing = inv.getItem(slot);
+                    if (existing == null || existing.getType() == Material.AIR) {
+                        int placeAmount = Math.min(toPlace.getMaxStackSize(), remaining);
+                        ItemStack placed = toPlace.clone(); // ✅ 安全：保留 NBT
+                        placed.setAmount(placeAmount);
+                        inv.setItem(slot, placed);
+                        remaining -= placeAmount;
+                        taken += placeAmount;
+                    }
+                }
+            }
+
+            // 更新剩余数量
+            stack.setAmount(Math.max(remaining, 0));
+        }
+
+        // === Step 3: 应用拾取结果 ===
         if (taken > 0) {
-            broadcastPickupAnimation(item, collectorEntityId, taken);
-
-            player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.1f, 1.0f + (float)(Math.random() * 0.4));
-
-            if (leftover.isEmpty()) {
-                item.remove();
+            if (stack.getAmount() <= 0) {
+                item.remove(); // 全部拾取
             } else {
-                ItemStack remaining = leftover.values().iterator().next();
-                item.setItemStack(remaining);
+                item.setItemStack(stack); // 部分拾取，更新掉落物
             }
 
-            CustomItemMerger merger = getCustomItemMerger();
-            if (merger != null) {
-                merger.removeItemFromReady(item);
-            }
+            // 发送拾取动画和音效
+            PacketUtils.sendPickupAnimation(plugin, player, item, taken);
+            float pitch = (float) (0.8 + Math.random() * 0.4);
+            player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.1f, pitch);
+            broadcastPickupAnimation(item, player.getEntityId(), taken);
         }
     }
 

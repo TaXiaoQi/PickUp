@@ -28,7 +28,6 @@ public class PickUp extends JavaPlugin {
     private int instantPickupDelayTicks;
 
     private double itemMergeRange;
-    private int itemMergeIntervalTicks;
 
     @Override
     public void onEnable() {
@@ -94,7 +93,6 @@ public class PickUp extends JavaPlugin {
 
         boolean itemMergeEnabled = config.getBoolean("custom-item-merge.enabled", true);
         itemMergeRange = config.getDouble("custom-item-merge.range", 1.0);
-        itemMergeIntervalTicks = config.getInt("custom-item-merge.interval-ticks", 10);
 
         if (pickupManager != null) {
             pickupManager.loadConfig();
@@ -125,11 +123,7 @@ public class PickUp extends JavaPlugin {
 
     private void initializeItemMerger() {
         if (pickupManager == null) return;
-        this.itemMerger = new CustomItemMerger(
-                this,
-                itemMergeRange,
-                itemMergeIntervalTicks
-        );
+        this.itemMerger = new CustomItemMerger(itemMergeRange);
         this.itemMerger.start();
     }
 

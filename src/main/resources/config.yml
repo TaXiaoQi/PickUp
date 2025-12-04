@@ -41,5 +41,3 @@ custom-item-merge:
   enabled: true
   # 合并检测半径（方块）
   range: 1.0
-  # 合并任务执行间隔（ticks），值越小合并越及时，CPU 开销略增
-  interval-ticks: 10
