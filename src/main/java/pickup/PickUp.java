@@ -6,8 +6,6 @@ import org.bukkit.configuration.file.FileConfiguration;
 import java.io.File;
 import java.util.Objects;
 
-
-// 主类
 public class PickUp extends JavaPlugin {
 
     private PickupManager pickupManager;
@@ -44,13 +42,18 @@ public class PickUp extends JavaPlugin {
         reloadPickup();
 
         this.pickupManager = new PickupManager(this);
-        getServer().getPluginManager().registerEvents(pickupManager, this);
+        // 初始化合并系统
+        initializeItemMerger();
+
+        PickupEvent pickupEvent = new PickupEvent(this, pickupManager);
+        getServer().getPluginManager().registerEvents(pickupEvent, this);
 
         if (!isPickupDisabled()) {
             pickupManager.enable();
         }
-
-        initializeItemMerger();
+        if (shouldRunItemMerger()) {
+            itemMerger.start();
+        }
 
         ReloadCommand executor = new ReloadCommand(this);
         Objects.requireNonNull(getCommand("up")).setExecutor(executor);
@@ -63,7 +66,6 @@ public class PickUp extends JavaPlugin {
     public void onDisable() {
         if (pickupManager != null && pickupManager.isActive()) {
             pickupManager.disable();
-            pickupManager.restoreOriginalPickupDelay();
         }
         if (itemMerger != null) {
             itemMerger.stop();
@@ -116,21 +118,25 @@ public class PickUp extends JavaPlugin {
         }
         if (itemMergeEnabled) {
             initializeItemMerger();
+            if (shouldRunItemMerger()) {
+                itemMerger.start();
+            }
         }
 
         getLogger().info("PickUp 配置已重载");
     }
 
     private void initializeItemMerger() {
-        if (pickupManager == null) return;
-        this.itemMerger = new CustomItemMerger(itemMergeRange);
-        this.itemMerger.start();
+        int activeDuration = getConfig().getInt("custom-item-merge.active-duration-ticks", 10);
+        int scanInterval = getConfig().getInt("custom-item-merge.scan-interval-ticks", 2);
+        this.itemMerger = new CustomItemMerger(this, itemMergeRange, activeDuration, scanInterval); // ← 传入 this
     }
 
     public void startPickup() {
         stoppedByCommand = false;
-        if (pickupManager != null) {
-            pickupManager.enable();
+        pickupManager.enable();
+        if (itemMerger != null && getConfig().getBoolean("custom-item-merge.enabled", true)) {
+            itemMerger.start();
         }
     }
 
@@ -140,10 +146,16 @@ public class PickUp extends JavaPlugin {
             pickupManager.disable();
             pickupManager.restoreOriginalPickupDelay();
         }
+        if (itemMerger != null) {
+            itemMerger.stop();
+        }
     }
 
     public boolean isPickupDisabled() {
         return stoppedByCommand || !getConfig().getBoolean("enabled", true);
+    }
+    private boolean shouldRunItemMerger() {
+        return !isPickupDisabled() && getConfig().getBoolean("custom-item-merge.enabled", true);
     }
 
     // ========== Getter 方法 ==========
@@ -157,6 +169,6 @@ public class PickUp extends JavaPlugin {
     public int getPlayerDropDelayTicks() { return playerDropDelayTicks; }
     public int getNaturalDropDelayTicks() { return naturalDropDelayTicks; }
     public int getInstantPickupDelayTicks() { return instantPickupDelayTicks; }
-    public CustomItemMerger getItemMerger() {return itemMerger;}
-    public boolean isStoppedByCommand() {return stoppedByCommand;}
+    public CustomItemMerger getItemMerger() { return itemMerger; }
+    public boolean isStoppedByCommand() { return stoppedByCommand; }
 }
