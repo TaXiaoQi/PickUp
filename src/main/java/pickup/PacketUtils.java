@@ -24,22 +24,25 @@ public final class PacketUtils {
 
     private PacketUtils() {}
 
-    public static void sendPickupAnimation(Plugin plugin, Player player, Entity item, int amount) {
+    public static void sendPickupAnimation(Plugin plugin, Player viewer, Entity collectedItem, int collectorEntityId, int amount) {
+        if (collectedItem == null || collectedItem.isDead()) {
+            return;
+        }
         try {
-            Object nmsPlayer = getHandle(player);
-            Object nmsItem = getHandle(item);
-            if (nmsPlayer == null || nmsItem == null) return;
+            Object nmsItem = getHandle(collectedItem);
+            if (nmsItem == null) return;
 
-            int itemId = getEntityId(nmsItem);
-            int playerId = getEntityId(nmsPlayer);
+            int collectedId = getEntityId(nmsItem);
 
-            Object packet = createCollectPacket(itemId, playerId, amount);
-            Object connection = getPlayerConnection(nmsPlayer);
+            Object packet = createCollectPacket(collectedId, collectorEntityId, amount);
+            Object nmsViewer = getHandle(viewer);
+            if (nmsViewer == null) return;
+
+            Object connection = getPlayerConnection(nmsViewer);
             sendPacket(connection, packet);
 
         } catch (Exception e) {
-            plugin.getLogger().log(java.util.logging.Level.WARNING,
-                    "Failed to send pickup animation packet", e);
+            plugin.getLogger().log(java.util.logging.Level.WARNING, "Failed to send pickup animation to " + viewer.getName(), e);
         }
     }
 

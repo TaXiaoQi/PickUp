@@ -254,10 +254,6 @@ public class PickupManager implements Listener {
                 }
             }
         }, 2L);
-        Material type = item.getItemStack().getType();
-        if (ContainerMaterials.SET.contains(type)) {
-            item.setItemStack(item.getItemStack());
-        }
     }
 
     public void restoreOriginalPickupDelay() {
@@ -404,107 +400,62 @@ public class PickupManager implements Listener {
 
     private void attemptPickup(Player player, Item item) {
         if (item.isDead()) return;
-        ItemStack originalStack = item.getItemStack();
-        if (originalStack.getType() == Material.AIR || originalStack.getAmount() <= 0) return;
+        ItemStack original = item.getItemStack();
+        if (original.getType() == Material.AIR || original.getAmount() <= 0) return;
+
+        int collectorEntityId = player.getEntityId();
 
         PlayerInventory inv = player.getInventory();
-        ItemStack stack = originalStack.clone(); // 完整副本，含 NBT
-        int taken = 0;
+        Map<Integer, ItemStack> leftover = inv.addItem(original);
 
-        // === 1. 副手 ===
-        ItemStack offHand = inv.getItemInOffHand();
-        if (!offHand.getType().isAir() && offHand.isSimilar(stack)) {
-            int space = Math.min(stack.getMaxStackSize() - offHand.getAmount(), stack.getAmount());
-            if (space > 0) {
-                offHand.setAmount(offHand.getAmount() + space);
-                inv.setItemInOffHand(offHand);
-                stack.setAmount(stack.getAmount() - space);
-                taken += space;
-            }
+        int taken;
+        if (leftover.isEmpty()) {
+            taken = original.getAmount();
+        } else {
+            int totalLeft = leftover.values().stream().mapToInt(ItemStack::getAmount).sum();
+            taken = original.getAmount() - totalLeft;
         }
 
-        // 如果还有剩余，尝试主背包
-        if (stack.getAmount() > 0) {
-            int remaining = stack.getAmount();
-
-            // === 2. 主背包（0-35）合并相似堆 ===
-            for (int slot = 0; slot < 36; slot++) {
-                if (remaining <= 0) break;
-                ItemStack existing = inv.getItem(slot);
-                if (existing != null && existing.isSimilar(stack) && existing.getAmount() < existing.getMaxStackSize()) {
-                    int space = Math.min(existing.getMaxStackSize() - existing.getAmount(), remaining);
-                    existing.setAmount(existing.getAmount() + space);
-                    inv.setItem(slot, existing);
-                    remaining -= space;
-                    taken += space;
-                }
-            }
-
-            // === 3. 快捷栏空位（优先手持位）===
-            if (remaining > 0) {
-                int heldSlot = player.getInventory().getHeldItemSlot(); // 0~8
-                ItemStack heldItem = inv.getItem(heldSlot);
-                if (heldItem == null || heldItem.getType() == Material.AIR) {
-                    ItemStack toPlace = stack.clone();
-                    toPlace.setAmount(Math.min(toPlace.getMaxStackSize(), remaining));
-                    inv.setItem(heldSlot, toPlace); // ✅ 保留 NBT！
-                    remaining -= toPlace.getAmount();
-                    taken += toPlace.getAmount();
-                }
-            }
-
-            // === 4. 快捷栏其他空位 ===
-            if (remaining > 0) {
-                for (int slot = 0; slot < 9; slot++) {
-                    if (remaining <= 0) break;
-                    ItemStack existing = inv.getItem(slot);
-                    if (existing == null || existing.getType() == Material.AIR) {
-                        ItemStack toPlace = stack.clone();
-                        toPlace.setAmount(Math.min(toPlace.getMaxStackSize(), remaining));
-                        inv.setItem(slot, toPlace); // ✅ 保留 NBT！
-                        remaining -= toPlace.getAmount();
-                        taken += toPlace.getAmount();
-                    }
-                }
-            }
-
-            // === 5. 主背包空位（9-35）===
-            if (remaining > 0) {
-                for (int slot = 9; slot < 36; slot++) {
-                    if (remaining <= 0) break;
-                    ItemStack existing = inv.getItem(slot);
-                    if (existing == null || existing.getType() == Material.AIR) {
-                        ItemStack toPlace = stack.clone();
-                        toPlace.setAmount(Math.min(toPlace.getMaxStackSize(), remaining));
-                        inv.setItem(slot, toPlace); // ✅ 保留 NBT！
-                        remaining -= toPlace.getAmount();
-                        taken += toPlace.getAmount();
-                    }
-                }
-            }
-
-            // 更新剩余数量
-            stack.setAmount(Math.max(remaining, 0));
-        }
-
-        // === 应用结果 ===
         if (taken > 0) {
-            if (stack.getAmount() <= 0) {
+            broadcastPickupAnimation(item, collectorEntityId, taken);
+
+            player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.1f, 1.0f + (float)(Math.random() * 0.4));
+
+            if (leftover.isEmpty()) {
                 item.remove();
             } else {
-                item.setItemStack(stack);
+                ItemStack remaining = leftover.values().iterator().next();
+                item.setItemStack(remaining);
             }
-            PacketUtils.sendPickupAnimation(plugin, player, item, taken);
-            float pitch = (float) (0.8 + Math.random() * 0.4);
-            player.playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.1f, pitch);
+
+            CustomItemMerger merger = getCustomItemMerger();
+            if (merger != null) {
+                merger.removeItemFromReady(item);
+            }
         }
     }
+
+    private void broadcastPickupAnimation(Item item, int collectorEntityId, int amount) {
+        Location loc = item.getLocation();
+        World world = loc.getWorld();
+        if (world == null) return;
+
+        Collection<Player> viewers = world.getNearbyEntitiesByType(Player.class, loc, 64.0);
+        for (Player viewer : viewers) {
+            PacketUtils.sendPickupAnimation(plugin, viewer, item, collectorEntityId, amount);
+        }
+    }
+
 
     private void setPickupDelayToMax(Item item) {
         try {
             item.setPickupDelay(Integer.MAX_VALUE);
             return;
-        } catch (NoSuchMethodError ignored) {
+        } catch (NoSuchMethodError | AbstractMethodError e) {
+            //
+        } catch (Exception e) {
+            plugin.getLogger().warning("Failed to set pickup delay via API: " + e.getMessage());
+            return;
         }
 
         try {
@@ -513,9 +464,11 @@ public class PickupManager implements Listener {
             if (pickupDelayField != null) {
                 pickupDelayField.setAccessible(true);
                 pickupDelayField.set(nmsItem, Integer.MAX_VALUE);
+            } else {
+                plugin.getLogger().warning("Could not find pickupDelay field in NMS Item class.");
             }
         } catch (Exception e) {
-            plugin.getLogger().warning("Failed to disable vanilla pickup delay: " + e.getMessage());
+            plugin.getLogger().warning("Failed to disable vanilla pickup delay via reflection: " + e.getMessage());
         }
     }
 
@@ -562,5 +515,3 @@ public class PickupManager implements Listener {
         UNKNOWN           // 初始状态
     }
 }
-
-

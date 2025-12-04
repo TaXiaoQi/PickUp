@@ -9,6 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import java.io.File;
 import java.io.IOException;
 
+// 指令处理类
 @SuppressWarnings("ClassCanBeRecord")
 public class ReloadCommand implements CommandExecutor {
     private final PickUp plugin;
@@ -110,12 +111,12 @@ public class ReloadCommand implements CommandExecutor {
             return;
         }
 
-        String msg = "§c[系统] 服务器将在 3 秒后重启！";
-        sender.sendMessage("服务器将在 3 秒后重启！");
+        String msg = "§c[系统] 服务器将在 10 秒后重启！";
+        sender.sendMessage("服务器将在 10 秒后重启！");
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(msg));
         plugin.getLogger().info("[Server Restart] Triggered by " + sender.getName());
 
-        Bukkit.getScheduler().runTaskLater(plugin, Bukkit::shutdown, 60L);
+        Bukkit.getScheduler().runTaskLater(plugin, Bukkit::shutdown, 200L);
     }
 
     private void handlePluginReload(CommandSender sender) {

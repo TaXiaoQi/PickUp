@@ -55,7 +55,16 @@ public class CustomItemMerger {
     }
 
     public void notifyItemReady(Item item) {
-        if (item == null || item.isDead()) return;
+        Material type = item.getItemStack().getType();
+        if (type == Material.BEEHIVE ||
+                type == Material.BEE_NEST ||
+                type == Material.SPAWNER ||
+                type == Material.DECORATED_POT ||
+                type == Material.SUSPICIOUS_SAND ||
+                type == Material.SUSPICIOUS_GRAVEL) {
+            return;
+        }
+        if (item.isDead()) return;
         World world = item.getWorld();
         readyItemsByWorld.computeIfAbsent(world, w -> ConcurrentHashMap.newKeySet()).add(item);
     }
@@ -102,13 +111,12 @@ public class CustomItemMerger {
                 for (int i = 0; i < items.size(); i++) {
                     Item a = items.get(i);
                     if (a.isDead()) continue;
-
+                    Location locA = a.getLocation();
                     for (int j = i + 1; j < items.size(); j++) {
                         Item b = items.get(j);
                         if (b.isDead()) continue;
-
-                        if (a.getItemStack().isSimilar(b.getItemStack())) {
-                            if (a.getLocation().distanceSquared(b.getLocation()) <= mergeRangeSq) {
+                        if (canSafelyMerge(a.getItemStack(), b.getItemStack())){
+                            if (locA.distanceSquared(b.getLocation()) <= mergeRangeSq) {
                                 performMerge(a, b);
                                 break;
                             }
@@ -117,6 +125,27 @@ public class CustomItemMerger {
                 }
             }
         }
+    }
+
+    private boolean isMergeableContainer(ItemStack stack) {
+        if (stack == null || stack.getType() == Material.AIR) {
+            return false;
+        }
+        String typeName = stack.getType().name();
+        return typeName.endsWith("_SHULKER_BOX") && stack.getMaxStackSize() == 64;
+    }
+
+    private boolean canSafelyMerge(ItemStack a, ItemStack b) {
+        if (!a.getType().equals(b.getType())) {
+            return false;
+        }
+
+        Material type = a.getType();
+        if (!type.name().endsWith("_SHULKER_BOX")) {
+            return a.isSimilar(b);
+        }
+
+        return isMergeableContainer(a) && isMergeableContainer(b);
     }
 
     private void performMerge(Item target, Item toMerge) {
@@ -146,9 +175,14 @@ public class CustomItemMerger {
         if (items != null) {
             items.remove(toMerge);
         }
-        Material type = target.getItemStack().getType();
-        if (ContainerMaterials.SET.contains(type)) {
-            target.setItemStack(target.getItemStack());
+    }
+
+    public void removeItemFromReady(Item item) {
+        if (item == null || item.isDead()) return;
+        World world = item.getWorld();
+        Set<Item> items = readyItemsByWorld.get(world);
+        if (items != null) {
+            items.remove(item);
         }
     }
 
