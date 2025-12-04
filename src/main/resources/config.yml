@@ -41,3 +41,7 @@ custom-item-merge:
   enabled: true
   # 合并检测半径（方块）
   range: 1.0
+  # 主动合并总时长（tick）
+  active-duration-ticks: 10
+  # 检查频率（ticks）：值越小响应越快，CPU越高
+  scan-interval-ticks: 2

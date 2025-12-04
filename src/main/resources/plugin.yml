@@ -17,7 +17,7 @@ commands:
     permission-message: §c你没有权限使用此命令！
   mc:
     description: 服务器管理命令（含重启）
-    usage: /<command> [reload|true|false|status]
+    usage: /<command> restart
     permission: pickup.admin
 permissions:
   pickup.admin:
