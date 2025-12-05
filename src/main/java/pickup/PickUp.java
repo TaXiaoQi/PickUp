@@ -1,5 +1,6 @@
 package pickup;
 
+import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.configuration.file.FileConfiguration;
 
@@ -34,6 +35,7 @@ public class PickUp extends JavaPlugin {
     private int instantPickupDelayTicks;      // 立即拾取延迟（tick）
 
     private double itemMergeRange;            // 物品合并范围（方块）
+    private PickupEvent pickupEventListener;  // 事件是否注销
 
     /**
      * 插件启用时的初始化方法
@@ -61,8 +63,8 @@ public class PickUp extends JavaPlugin {
         initializeItemMerger();
 
         // 注册事件监听器
-        PickupEvent pickupEvent = new PickupEvent(this, pickupManager);
-        getServer().getPluginManager().registerEvents(pickupEvent, this);
+        this.pickupEventListener = new PickupEvent(this, pickupManager);
+        getServer().getPluginManager().registerEvents(pickupEventListener, this);
 
         // 根据配置启用功能
         if (!isPickupDisabled()) {
@@ -213,6 +215,13 @@ public class PickUp extends JavaPlugin {
         return stoppedByCommand || !getConfig().getBoolean("enabled", true);
     }
 
+    public void unregisterPickupEvent() {
+        if (pickupEventListener != null) {
+            HandlerList.unregisterAll(pickupEventListener);
+            pickupEventListener = null;
+        }
+    }
+
     /**
      * 检查是否应该运行物品合并器
      * @return true如果应该运行（拾取未禁用且合并功能启用）
@@ -223,7 +232,6 @@ public class PickUp extends JavaPlugin {
 
     // ========== Getter 方法 ==========
     // 提供对配置参数的访问，供其他类使用
-
     public boolean isPlayerDriven() { return playerDriven; }
     public double getPickupRange() { return pickupRange; }
     public int getSelfImmuneTicks() { return selfImmuneTicks; }

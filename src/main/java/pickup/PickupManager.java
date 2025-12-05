@@ -452,6 +452,22 @@ public class PickupManager {
 
         // 恢复原版物品拾取延迟
         restoreOriginalPickupDelay();
+        // === 新增代码：修复已存在的物品 ===
+        for (World world : Bukkit.getWorlds()) {
+            for (Item item : world.getEntitiesByClass(Item.class)) {
+                try {
+                    Object nmsItem = getGetHandleMethod().invoke(item);
+                    Field delayField = getItemPickupDelayField();
+                    // 将 pickupDelay 重置为 0，使其可以立即被拾取
+                    delayField.set(nmsItem, 0);
+                } catch (Exception e) {
+                    if (plugin.getConfig().getBoolean("debug", false)) {
+                        plugin.getLogger().info("Failed to reset pickup delay for an item: " + e.getMessage());
+                    }
+                }
+            }
+        }
+        plugin.unregisterPickupEvent();
     }
 
     /**

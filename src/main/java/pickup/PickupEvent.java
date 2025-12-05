@@ -42,7 +42,9 @@ public class PickupEvent implements Listener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onItemSpawn(ItemSpawnEvent event) {
         // 检查插件是否启用（防止插件禁用后仍有事件处理）
-        if (!plugin.isEnabled()) return;
+        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+            return;
+        }
 
         // 委托给拾取管理器处理具体的生成逻辑
         pickupManager.handleItemSpawn(event);
@@ -57,7 +59,9 @@ public class PickupEvent implements Listener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onPlayerDropItem(PlayerDropItemEvent event) {
         // 检查插件是否启用
-        if (!plugin.isEnabled()) return;
+        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+            return;
+        }
 
         // 委托给拾取管理器处理玩家丢弃逻辑
         pickupManager.handlePlayerDrop(event);
@@ -72,7 +76,9 @@ public class PickupEvent implements Listener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onBlockDrop(BlockDropItemEvent event) {
         // 检查插件是否启用
-        if (!plugin.isEnabled()) return;
+        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+            return;
+        }
 
         // 委托给拾取管理器处理方块掉落逻辑
         pickupManager.handleBlockDrop(event);
@@ -87,7 +93,9 @@ public class PickupEvent implements Listener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onEntityDeath(EntityDeathEvent event) {
         // 检查插件是否启用
-        if (!plugin.isEnabled()) return;
+        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+            return;
+        }
 
         // 委托给拾取管理器处理实体死亡掉落逻辑
         // 注意：此事件中的掉落物需要特殊处理，因为不会立即生成物品实体
@@ -103,7 +111,9 @@ public class PickupEvent implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
         // 检查插件是否启用
-        if (!plugin.isEnabled()) return;
+        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+            return;
+        }
 
         // 检查玩家驱动模式是否启用（配置项）
         if (!plugin.isPlayerDriven()) return;
