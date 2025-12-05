@@ -1,18 +1,19 @@
 package pickup;
 
 import org.bukkit.*;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.Item;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
 import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.inventory.EntityEquipment;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -284,6 +285,119 @@ public class PickupManager {
     }
 
     /**
+     * 执行 LivingEntity 拾取物品（通用版本）
+     */
+    private boolean canPickupNow(LivingEntity entity, Item item) {
+        if (entity instanceof Player player) {
+            return canPickupNow(player, item); // 复用玩家逻辑
+        }
+        // 对于非玩家生物：只要在范围内、物品有效，就允许拾取
+        if (!item.isValid() || item.isDead()) {
+            return false;
+        }
+
+        // 距离检查（复用已有字段）
+        double distSq = entity.getLocation().distanceSquared(item.getLocation());
+        return !(distSq > pickupRangeSq);
+
+        // 生物不需要冷却时间（原版行为），所以直接返回 true
+    }
+
+    /**
+     * 执行非玩家 LivingEntity 拾取物品（支持自动装备）
+     */
+    private void performLivingEntityPickup(LivingEntity entity, Item item) {
+        if (!item.isValid() || item.isDead()) return;
+
+        ItemStack stack = item.getItemStack().clone();
+        if (stack.getAmount() <= 0 || stack.getType() == Material.AIR) {
+            item.remove();
+            return;
+        }
+
+        EntityEquipment equip = entity.getEquipment();
+        if (equip == null) return;
+
+        World world = entity.getWorld();
+        Location loc = item.getLocation();
+        boolean pickedUp = false;
+
+        Material type = stack.getType();
+
+        // === 尝试自动装备到正确槽位 ===
+        if (ArmorType.isHelmet(type)) {
+            if (isAirOrReplaceable(equip.getHelmet())) {
+                equip.setHelmet(stack);
+                pickedUp = true;
+            }
+        } else if (ArmorType.isChestplate(type)) {
+            if (isAirOrReplaceable(equip.getChestplate())) {
+                equip.setChestplate(stack);
+                pickedUp = true;
+            }
+        } else if (ArmorType.isLeggings(type)) {
+            if (isAirOrReplaceable(equip.getLeggings())) {
+                equip.setLeggings(stack);
+                pickedUp = true;
+            }
+        } else if (ArmorType.isBoots(type)) {
+            if (isAirOrReplaceable(equip.getBoots())) {
+                equip.setBoots(stack);
+                pickedUp = true;
+            }
+        } else if (isWeaponOrTool(type)) {
+            // 主手：优先装备武器/工具
+            if (isAirOrReplaceable(equip.getItemInMainHand())) {
+                equip.setItemInMainHand(stack);
+                pickedUp = true;
+            }
+        }
+
+        // === 如果不能装备，尝试放入背包（仅限 InventoryHolder）===
+        if (!pickedUp && entity instanceof InventoryHolder holder) {
+            Inventory inv = holder.getInventory();
+            HashMap<Integer, ItemStack> leftover = inv.addItem(stack);
+            pickedUp = leftover.isEmpty();
+        }
+
+        // === 反馈 ===
+        if (pickedUp) {
+            world.spawnParticle(Particle.ITEM, loc, 3, 0.1, 0.1, 0.1, 0.0,
+                    new ItemStack(stack.getType(), 1));
+            item.remove();
+        }
+    }
+
+    /**
+     * 判断当前装备是否为空或可被新物品替换
+     * 可扩展为比较附魔、耐久等
+     */
+    private boolean isAirOrReplaceable(ItemStack current) {
+        return current == null || current.getType() == Material.AIR;
+    }
+
+    /**
+     * 判断是否为武器或工具（可放入主手）
+     * 兼容 1.13+ 的材质命名（如 WOODEN_SWORD → STONE_AXE 等）
+     */
+    private boolean isWeaponOrTool(Material mat) {
+        String name = mat.name();
+        return name.endsWith("_SWORD") ||
+                name.endsWith("_AXE") ||
+                name.endsWith("_PICKAXE") ||
+                name.endsWith("_SHOVEL") ||
+                name.endsWith("_HOE") ||
+                name.equals("BOW") ||
+                name.equals("CROSSBOW") ||
+                name.equals("TRIDENT") ||
+                name.equals("FISHING_ROD") ||
+                name.equals("SHEARS") ||
+                name.equals("FLINT_AND_STEEL") ||
+                name.equals("CARROT_ON_A_STICK") ||
+                name.equals("WARPED_FUNGUS_ON_A_STICK");
+    }
+
+    /**
      * 检查玩家是否可以立即拾取指定物品
      * @param player 尝试拾取的玩家
      * @param item 要拾取的物品
@@ -493,16 +607,15 @@ public class PickupManager {
 
     /**
      * 启动物品驱动模式
-     * 定期扫描活跃物品并尝试拾取
+     * 定期扫描活跃物品并尝试可被拾取生物拾取
      */
     private void startItemDriven() {
         int checkInterval = plugin.getPickupAttemptIntervalTicks();
         itemDetectionTask = new BukkitRunnable() {
             @Override
             public void run() {
-                long currentTick = -1; // 延迟初始化，按需获取（提高性能）
+                long currentTick = -1;
 
-                // 遍历所有世界的活跃物品
                 Iterator<Map.Entry<World, Set<Item>>> worldIter = activeItemsByWorld.entrySet().iterator();
                 while (worldIter.hasNext()) {
                     Map.Entry<World, Set<Item>> entry = worldIter.next();
@@ -512,75 +625,93 @@ public class PickupManager {
                     while (itemIter.hasNext()) {
                         Item item = itemIter.next();
 
-                        // 检查物品是否仍然有效
                         if (item.isDead() || !item.isValid()) {
                             itemIter.remove();
                             continue;
                         }
 
-                        // 获取物品的生成时间
                         PersistentDataContainer pdc = item.getPersistentDataContainer();
                         Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
 
                         if (spawnTick == null) {
-                            // 安全兜底：如果未记录生成时间，以当前tick作为spawnTick
                             if (currentTick == -1) currentTick = item.getWorld().getFullTime();
                             spawnTick = currentTick;
                             pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, spawnTick);
                         }
 
-                        // 检查物品是否已超过活跃检测时间（不再活跃）
-                        // 使用tick比较（activeDetectionTicks是tick单位）
                         if (currentTick == -1) currentTick = item.getWorld().getFullTime();
                         if (currentTick - spawnTick > activeDetectionTicks) {
-                            itemIter.remove(); // 移除不再活跃的物品
+                            itemIter.remove();
                             continue;
                         }
 
-                        // 在拾取范围内查找最近的合法玩家
+                        // === 新增：支持玩家和可拾取生物 ===
                         World world = item.getWorld();
                         Location loc = item.getLocation();
                         double range = plugin.getPickupRange();
-                        Player nearest = null;
+                        double rangeSq = range * range;
+
+                        LivingEntity nearestPicker = null;
                         double nearestDistSq = Double.MAX_VALUE;
 
-                        // ✅ 优化点：使用Predicate只查询非旁观者玩家
+                        // 查找范围内的所有 LivingEntity（包括玩家和生物）
                         for (Entity entity : world.getNearbyEntities(loc, range, range, range,
-                                e -> e instanceof Player p && p.getGameMode() != GameMode.SPECTATOR)) {
+                                e -> e instanceof LivingEntity le && isEligiblePicker(le))) {
 
-                            Player player = (Player) entity;
-                            double distSq = player.getLocation().distanceSquared(loc);
+                            LivingEntity picker = (LivingEntity) entity;
+                            double distSq = picker.getLocation().distanceSquared(loc);
 
-                            // 提前剪枝：超出范围 或 不比当前最近更近
-                            if (distSq > pickupRangeSq || distSq >= nearestDistSq) {
+                            if (distSq > rangeSq || distSq >= nearestDistSq) {
                                 continue;
                             }
 
-                            // 检查玩家是否可以拾取该物品
-                            if (canPickupNow(player, item)) {
-                                nearest = player;
+                            // 检查该实体是否可以拾取此物品（需重载 canPickupNow）
+                            if (canPickupNow(picker, item)) {
+                                nearestPicker = picker;
                                 nearestDistSq = distSq;
                             }
                         }
 
-                        // 如果找到合适的玩家，执行拾取并从列表中移除物品
-                        if (nearest != null) {
-                            performPickup(nearest, item);
+                        if (nearestPicker != null) {
+                            if (nearestPicker instanceof Player player) {
+                                performPickup(player, item); // 调用玩家专用版本
+                            } else {
+                                performLivingEntityPickup(nearestPicker, item); // 调用生物通用版本
+                            } // 需重载
                             itemIter.remove();
                         }
+                        // ==================================
                     }
 
-                    // 如果该世界的活跃物品列表为空，移除该世界的条目
                     if (items.isEmpty()) {
                         worldIter.remove();
                     }
 
-                    currentTick = -1; // 重置，下一个世界重新获取当前时间
+                    currentTick = -1;
                 }
             }
         };
-        // 立即执行，然后按配置间隔定期执行
         itemDetectionTask.runTaskTimer(plugin, 0, checkInterval);
+    }
+
+    /**
+     * 判断一个 LivingEntity 是否在原版中具备拾取物品的能力
+     */
+    private boolean isEligiblePicker(LivingEntity entity) {
+        if (entity instanceof Player player) {
+            return player.getGameMode() != GameMode.SPECTATOR;
+        }
+
+        // 僵尸类（Zombie, Husk, Drowned）
+        if (entity instanceof Zombie) {
+            return true;
+        }
+
+        // 猪灵（Piling）和幼年猪灵
+        return entity.getType() == EntityType.PIGLIN || entity.getType() == EntityType.PIGLIN_BRUTE;
+        // 注意：幼年猪灵（Baby Piling）是 Piling 的 baby variant，也包含在内
+
+        // 其他未来可能支持的生物可在此扩展
     }
 
     /**
@@ -609,7 +740,6 @@ public class PickupManager {
     }
 
     // ====== 反射工具（增强版）======
-
     private static volatile Field cachedPickupDelayField = null;
 
     /**

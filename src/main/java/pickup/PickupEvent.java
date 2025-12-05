@@ -119,6 +119,11 @@ public class PickupEvent implements Listener {
         if (!plugin.isPlayerDriven()) return;
 
         Player player = event.getPlayer();
+        if (!player.isOnline()) {
+            return;
+        } else {
+            player.getWorld();
+        }
 
         // 旁观者模式玩家不触发拾取（游戏规则）
         if (player.getGameMode().equals(org.bukkit.GameMode.SPECTATOR)) return;
