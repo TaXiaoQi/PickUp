@@ -13,23 +13,23 @@ pickup:
   self-immune-ticks: 5
   # 物品拾取冷却（单位：ticks）
   delays:
-    # 玩家手动丢弃（单位：ticks）
+    # 玩家丢弃物品拾取冷却（单位：ticks）
     player-drop: 20
-    # 怪物死亡、方块破坏等自然掉落（单位：ticks）
+    # 实体掉落物品拾取冷却（单位：ticks）
     natural-drop: 10
-    # 投掷器、命令 /give、红石生成（单位：ticks）
+    # 其他类型物品拾取冷却（单位：ticks）
     instant-pickup: 0
 
 # ========================
 # 拾取模式（决定拾取如何触发）
 # ========================
 mode:
-  # 玩家移动拾取
+  # 玩家移动拾取开关
   player-driven: true
   # 检查频率（单位：ticks）：值越小响应越快，CPU越高
   player-scan-interval: 6
 
-  # 物品检测拾取
+  # 物品主动检测拾取开关
   item-driven: true
   # 主动检测时长 （单位：ticks）
   item-active-duration: 60
@@ -40,7 +40,7 @@ mode:
 #     掉落物合并设置
 # ========================
 custom-item-merge:
-  # 掉落物合并（减少实体数量）
+  # 掉落物合并开关（减少实体数量）
   enabled: true
   # 合并检测半径（单位：方块）
   range: 1.0

@@ -110,38 +110,21 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
-        // 检查插件是否启用
-        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+        if (!plugin.isEnabled() || plugin.isPickupDisabled() || !plugin.isPlayerDriven()) {
             return;
         }
-
-        // 检查玩家驱动模式是否启用（配置项）
-        if (!plugin.isPlayerDriven()) return;
 
         Player player = event.getPlayer();
-        if (!player.isOnline()) {
+        if (!player.isOnline() || player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
             return;
-        } else {
-            player.getWorld();
         }
 
-        // 旁观者模式玩家不触发拾取（游戏规则）
-        if (player.getGameMode().equals(org.bukkit.GameMode.SPECTATOR)) return;
-
-        /// 仅当位置变化显著时触发拾取检测，优化性能
-        /// 通过检查坐标是否变化来避免高频调用（例如：原地旋转、抬头低头等）
-        /// 只检查方块坐标变化，忽略微小的位置变化（如重力影响）
         if (event.getFrom().getBlockX() != event.getTo().getBlockX() ||
                 event.getFrom().getBlockY() != event.getTo().getBlockY() ||
                 event.getFrom().getBlockZ() != event.getTo().getBlockZ()) {
-            // 委托给拾取管理器尝试拾取附近物品
             pickupManager.tryPickup(player);
         }
-
-        /// 注意：这里使用 MONITOR 优先级，确保在其他插件处理完移动事件后执行
-        /// 这样不会干扰其他插件的移动相关逻辑，同时能正确拾取物品
-        }
-
+    }
     /// 事件优先级说明：
     /// - LOWEST: 最早执行，用于处理基础的物品生成和掉落事件
     /// - MONITOR: 最后执行，用于玩家移动后的拾取检测，避免干扰其他插件

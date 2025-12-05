@@ -6,14 +6,11 @@ import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
-import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryHolder;
-import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.*;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.inventory.PlayerInventory;
-import org.bukkit.inventory.EntityEquipment;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -492,9 +489,12 @@ public class PickupManager {
      * @param item 要拾取的物品
      */
     private void performPickup(Player player, Item item) {
-        ItemStack stack = item.getItemStack();
-        if (stack.getAmount() <= 0) return;
-        int amount = stack.getAmount();
+        ItemStack originalStack = item.getItemStack();
+        if (originalStack.getAmount() <= 0) return;
+        int amount = originalStack.getAmount(); // 动画用原始数量
+
+        // 创建干净的、可堆叠的物品副本
+        ItemStack cleanStack = createCleanStack(originalStack);
 
         PlayerInventory inv = player.getInventory();
         boolean merged = false;
@@ -502,26 +502,24 @@ public class PickupManager {
         // 第一阶段：尝试合并到现有堆栈（优先主背包9-35槽位）
         for (int i = 9; i < 36; i++) {
             ItemStack existing = inv.getItem(i);
-            if (existing != null && existing.isSimilar(stack)) {
+            if (existing != null && existing.isSimilar(cleanStack)) { // ✅ 使用 cleanStack 判断
                 int space = existing.getMaxStackSize() - existing.getAmount();
-                if (space >= stack.getAmount()) {
-                    // 现有堆栈有足够空间，完全合并
-                    existing.setAmount(existing.getAmount() + stack.getAmount());
+                if (space >= cleanStack.getAmount()) {
+                    existing.setAmount(existing.getAmount() + cleanStack.getAmount());
                     merged = true;
                     break;
                 } else if (space > 0) {
-                    // 现有堆栈有部分空间，部分合并
                     existing.setAmount(existing.getMaxStackSize());
-                    stack.setAmount(stack.getAmount() - space);
+                    cleanStack.setAmount(cleanStack.getAmount() - space); // ✅ 操作 cleanStack
                 }
             }
         }
 
         // 第二阶段：如果未完全合并，尝试放入空位（优先热键栏0-8，然后9-35）
-        if (!merged && stack.getAmount() > 0) {
+        if (!merged && cleanStack.getAmount() > 0) {
             for (int i = 0; i < 36; i++) {
                 if (inv.getItem(i) == null) {
-                    inv.setItem(i, stack.clone());
+                    inv.setItem(i, cleanStack.clone()); // ✅ 放入干净物品
                     merged = true;
                     break;
                 }
@@ -529,23 +527,18 @@ public class PickupManager {
         }
 
         // 第三阶段：如果仍未处理完，尝试放入副手
-        if (!merged && stack.getAmount() > 0) {
+        if (!merged && cleanStack.getAmount() > 0) {
             ItemStack offhand = inv.getItemInOffHand();
-            if (offhand.getType() == Material.AIR || (offhand.isSimilar(stack) && offhand.getAmount() < offhand.getMaxStackSize())) {
+            if (offhand.getType() == Material.AIR || (offhand.isSimilar(cleanStack) && offhand.getAmount() < offhand.getMaxStackSize())) {
                 if (offhand.getType() == Material.AIR) {
-                    // 副手为空，直接放入
-                    inv.setItemInOffHand(stack.clone());
+                    inv.setItemInOffHand(cleanStack.clone()); // ✅ 放入干净物品
                 } else {
-                    // 副手有同类物品，尝试合并
                     int space = offhand.getMaxStackSize() - offhand.getAmount();
-                    if (space >= stack.getAmount()) {
-                        // 副手有足够空间
-                        offhand.setAmount(offhand.getAmount() + stack.getAmount());
+                    if (space >= cleanStack.getAmount()) {
+                        offhand.setAmount(offhand.getAmount() + cleanStack.getAmount());
                     } else {
-                        // 副手空间不足，部分合并
                         offhand.setAmount(offhand.getMaxStackSize());
-                        stack.setAmount(stack.getAmount() - space);
-                        // 剩余物品无法处理 → 理论上不会发生，作为安全兜底
+                        cleanStack.setAmount(cleanStack.getAmount() - space);
                     }
                 }
                 merged = true;
@@ -557,14 +550,10 @@ public class PickupManager {
             World world = player.getWorld();
             Location loc = item.getLocation();
 
-            // 发送拾取动画数据包给所有观看者
             PacketUtils.sendPickupAnimation(plugin, player, item, amount);
-            // 播放拾取音效（仅对玩家）
             world.playSound(loc, Sound.ENTITY_ITEM_PICKUP, 0.5f, 1.0f);
-            // 移除物品实体
             item.remove();
         }
-        // 注意：如果merged为false，物品会留在地上（通常是背包已满的情况）
     }
 
     // ====== 启用/禁用控制 ======
@@ -906,5 +895,19 @@ public class PickupManager {
      */
     public boolean isActive() {
         return active;
+    }
+
+    // 清除打标
+    private ItemStack createCleanStack(ItemStack original) {
+        ItemStack clean = original.clone();
+        ItemMeta meta = clean.getItemMeta();
+        if (meta != null) {
+            PersistentDataContainer pdc = meta.getPersistentDataContainer();
+            pdc.remove(SOURCE_KEY);
+            pdc.remove(SPAWN_TICK_KEY);
+            pdc.remove(DROPPED_BY_KEY);
+            clean.setItemMeta(meta);
+        }
+        return clean;
     }
 }
