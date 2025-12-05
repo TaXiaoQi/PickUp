@@ -326,28 +326,28 @@ public class PickupManager {
 
         // === 尝试自动装备到正确槽位 ===
         if (ArmorType.isHelmet(type)) {
-            if (isAirOrReplaceable(equip.getHelmet())) {
+            if (isBetterEquipment(stack, equip.getHelmet())) {
                 equip.setHelmet(stack);
                 pickedUp = true;
             }
         } else if (ArmorType.isChestplate(type)) {
-            if (isAirOrReplaceable(equip.getChestplate())) {
+            if (isBetterEquipment(stack, equip.getChestplate())) {
                 equip.setChestplate(stack);
                 pickedUp = true;
             }
         } else if (ArmorType.isLeggings(type)) {
-            if (isAirOrReplaceable(equip.getLeggings())) {
+            if (isBetterEquipment(stack, equip.getLeggings())) {
                 equip.setLeggings(stack);
                 pickedUp = true;
             }
         } else if (ArmorType.isBoots(type)) {
-            if (isAirOrReplaceable(equip.getBoots())) {
+            if (isBetterEquipment(stack, equip.getBoots())) {
                 equip.setBoots(stack);
                 pickedUp = true;
             }
         } else if (isWeaponOrTool(type)) {
             // 主手：优先装备武器/工具
-            if (isAirOrReplaceable(equip.getItemInMainHand())) {
+            if (isBetterEquipment(stack, equip.getItemInMainHand())) {
                 equip.setItemInMainHand(stack);
                 pickedUp = true;
             }
@@ -369,11 +369,50 @@ public class PickupManager {
     }
 
     /**
-     * 判断当前装备是否为空或可被新物品替换
-     * 可扩展为比较附魔、耐久等
+     * 判断新物品是否比当前装备更优（用于生物自动替换）
+     * 评分规则：材质等级 > 是否有附魔 > 耐久（可选，此处暂不考虑）
      */
-    private boolean isAirOrReplaceable(ItemStack current) {
-        return current == null || current.getType() == Material.AIR;
+    private boolean isBetterEquipment(ItemStack newItem, ItemStack current) {
+        if (current == null || current.getType() == Material.AIR) {
+            return true; // 空槽位总是可以装备
+        }
+        if (newItem == null || newItem.getType() == Material.AIR) {
+            return false;
+        }
+
+        int newScore = getEquipmentScore(newItem);
+        int currentScore = getEquipmentScore(current);
+
+        if (newScore != currentScore) {
+            return newScore > currentScore;
+        }
+
+        // 分数相同：优先选择有附魔的
+        boolean newHasEnchants = !newItem.getEnchantments().isEmpty();
+        boolean currentHasEnchants = !current.getEnchantments().isEmpty();
+        return newHasEnchants && !currentHasEnchants;
+    }
+
+    /**
+     * 获取装备的材质评分（越高越好）
+     */
+    private int getEquipmentScore(ItemStack stack) {
+        Material mat = stack.getType();
+        String name = mat.name();
+
+        // 盔甲 & 工具通用材质顺序（1.13+ 命名）
+        if (name.contains("NETHERITE")) return 5;
+        if (name.contains("DIAMOND")) return 4;
+        if (name.contains("GOLD")) return 3;      // 注意：金质工具耐久低但挖掘快，这里按常规视为中等
+        if (name.contains("IRON")) return 3;
+        if (name.contains("STONE")) return 2;
+        if (name.contains("WOOD") || name.contains("LEATHER")) return 1;
+        if (name.equals("CHAINMAIL_CHESTPLATE") ||
+                name.equals("CHAINMAIL_HELMET") ||
+                name.equals("CHAINMAIL_LEGGINGS") ||
+                name.equals("CHAINMAIL_BOOTS")) return 2; // 链甲 ≈ 石头
+
+        return 0; // 其他（如南瓜头、鞘翅等）不参与比较
     }
 
     /**
@@ -515,8 +554,13 @@ public class PickupManager {
 
         // 如果成功处理了物品，发送拾取动画并移除物品实体
         if (merged) {
+            World world = player.getWorld();
+            Location loc = item.getLocation();
+
             // 发送拾取动画数据包给所有观看者
             PacketUtils.sendPickupAnimation(plugin, player, item, amount);
+            // 播放拾取音效（仅对玩家）
+            world.playSound(loc, Sound.ENTITY_ITEM_PICKUP, 0.5f, 1.0f);
             // 移除物品实体
             item.remove();
         }
@@ -701,17 +745,10 @@ public class PickupManager {
         if (entity instanceof Player player) {
             return player.getGameMode() != GameMode.SPECTATOR;
         }
-
-        // 僵尸类（Zombie, Husk, Drowned）
-        if (entity instanceof Zombie) {
-            return true;
+        if (entity instanceof Mob mob) {
+            return mob.getCanPickupItems();
         }
-
-        // 猪灵（Piling）和幼年猪灵
-        return entity.getType() == EntityType.PIGLIN || entity.getType() == EntityType.PIGLIN_BRUTE;
-        // 注意：幼年猪灵（Baby Piling）是 Piling 的 baby variant，也包含在内
-
-        // 其他未来可能支持的生物可在此扩展
+        return false;
     }
 
     /**
