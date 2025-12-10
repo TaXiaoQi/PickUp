@@ -98,15 +98,13 @@ public class PickupManager {
                 .getPersistentDataContainer()
                 .get(SOURCE_KEY, PersistentDataType.STRING);
 
-        if (source != null) {
-            // 将来源标记写入物品实体的持久化数据容器
-            item.getPersistentDataContainer().set(SOURCE_KEY, PersistentDataType.STRING, source);
-            // 记录生成时间（tick）
-            item.getPersistentDataContainer().set(SPAWN_TICK_KEY, PersistentDataType.LONG, item.getWorld().getFullTime());
-        } else {
-            // 默认视为自然掉落或立即拾取（取决于配置）
-            markItemAsNaturalDrop(item);
-        }
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
+
+        // 默认视为自然掉落
+        pdc.set(SOURCE_KEY, PersistentDataType.STRING, Objects.requireNonNullElseGet(source, ItemSourceType.NATURAL_DROP::name));
+
+        // 确保记录生成时间（tick）
+        pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, item.getWorld().getFullTime());
 
         // 如果物品驱动模式启用，将物品添加到活跃物品列表
         if (plugin.isItemDrivenEnabled()) {
@@ -288,19 +286,57 @@ public class PickupManager {
      * 执行 LivingEntity 拾取物品（通用版本）
      */
     private boolean canPickupNow(LivingEntity entity, Item item) {
-        if (entity instanceof Player player) {
-            return canPickupNow(player, item); // 复用玩家逻辑
+        long currentTime = item.getWorld().getFullTime(); // 当前游戏时间（tick）
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
+
+        // 获取物品的生成时间和来源类型
+        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
+        String sourceStr = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
+        ItemSourceType source = parseSource(sourceStr); // 解析来源类型
+
+        // 如果未记录生成时间，使用当前时间作为默认值
+        if (spawnTick == null) {
+            spawnTick = currentTime;
         }
-        // 对于非玩家生物：只要在范围内、物品有效，就允许拾取
-        if (!item.isValid() || item.isDead()) {
+
+        // 根据物品来源类型获取要求的延迟时间
+        long requiredDelay = getRequiredDelay(source);
+
+        // 检查是否满足延迟要求（冷却时间）
+        if (currentTime - spawnTick < requiredDelay) {
             return false;
         }
 
-        // 距离检查（复用已有字段）
-        double distSq = entity.getLocation().distanceSquared(item.getLocation());
-        return !(distSq > pickupRangeSq);
+        // 特殊处理：玩家自己丢弃的物品有自身免疫时间（仅对玩家有效）
+        if (entity instanceof Player player && source == ItemSourceType.PLAYER_DROP) {
+            String droppedByStr = pdc.get(DROPPED_BY_KEY, PersistentDataType.STRING);
+            if (droppedByStr != null) {
+                try {
+                    UUID droppedBy = UUID.fromString(droppedByStr);
+                    if (droppedBy.equals(player.getUniqueId())) {
+                        // 如果拾取者就是丢弃者，检查是否还在自身免疫期内
+                        if (currentTime - spawnTick < selfImmuneTicks) {
+                            return false;
+                        }
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    // UUID格式无效，忽略
+                }
+            }
+        }
 
-        // 生物不需要冷却时间（原版行为），所以直接返回 true
+        // 检查距离是否在拾取范围内（使用预先计算的平方值优化性能）
+        return item.getLocation().distanceSquared(entity.getLocation()) <= pickupRangeSq;
+    }
+
+    /**
+     * 检查玩家是否可以立即拾取指定物品
+     * @param player 尝试拾取的玩家
+     * @param item 要拾取的物品
+     * @return 是否可以拾取
+     */
+    private boolean canPickupNow(Player player, Item item) {
+        return canPickupNow((LivingEntity) player, item);
     }
 
     // 容器拾取时检测是否是我们的物品
@@ -582,56 +618,6 @@ public class PickupManager {
     }
 
     /**
-     * 检查玩家是否可以立即拾取指定物品
-     * @param player 尝试拾取的玩家
-     * @param item 要拾取的物品
-     * @return 是否可以拾取
-     */
-    private boolean canPickupNow(Player player, Item item) {
-        long currentTime = item.getWorld().getFullTime(); // 当前游戏时间（tick）
-        PersistentDataContainer pdc = item.getPersistentDataContainer();
-
-        // 获取物品的生成时间和来源类型
-        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
-        String sourceStr = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
-        ItemSourceType source = parseSource(sourceStr); // 解析来源类型
-
-        // 如果未记录生成时间，使用当前时间作为默认值
-        if (spawnTick == null) {
-            spawnTick = currentTime;
-        }
-
-        // 根据物品来源类型获取要求的延迟时间
-        long requiredDelay = getRequiredDelay(source);
-
-        // 检查是否满足延迟要求（冷却时间）
-        if (currentTime - spawnTick < requiredDelay) {
-            return false;
-        }
-
-        // 特殊处理：玩家自己丢弃的物品有自身免疫时间
-        if (source == ItemSourceType.PLAYER_DROP) {
-            String droppedByStr = pdc.get(DROPPED_BY_KEY, PersistentDataType.STRING);
-            if (droppedByStr != null) {
-                try {
-                    UUID droppedBy = UUID.fromString(droppedByStr);
-                    if (droppedBy.equals(player.getUniqueId())) {
-                        // 如果拾取者就是丢弃者，检查是否还在自身免疫期内
-                        if (currentTime - spawnTick < selfImmuneTicks) {
-                            return false;
-                        }
-                    }
-                } catch (IllegalArgumentException ignored) {
-                    // UUID格式无效，忽略
-                }
-            }
-        }
-
-        // 检查距离是否在拾取范围内（使用预先计算的平方值优化性能）
-        return item.getLocation().distanceSquared(player.getLocation()) <= pickupRangeSq;
-    }
-
-    /**
      * 执行物品拾取逻辑
      * @param player 拾取物品的玩家
      * @param item 要拾取的物品
@@ -745,24 +731,30 @@ public class PickupManager {
         }
         activeItemsByWorld.clear(); // 清空活跃物品列表
 
-        // 恢复原版物品拾取延迟
-        restoreOriginalPickupDelay();
-        // === 新增代码：修复已存在的物品 ===
+        // 恢复原版物品拾取延迟为0（立即可拾取）
+        restoreOriginalPickupDelayToZero();
+
+    }
+
+    /**
+     * 恢复所有物品的原版拾取延迟为0（禁用插件时调用）
+     * 使物品可以立即被原版机制拾取
+     */
+    public void restoreOriginalPickupDelayToZero() {
         for (World world : Bukkit.getWorlds()) {
-            for (Item item : world.getEntitiesByClass(Item.class)) {
-                try {
-                    Object nmsItem = getGetHandleMethod().invoke(item);
-                    Field delayField = getItemPickupDelayField();
-                    // 将 pickupDelay 重置为 0，使其可以立即被拾取
-                    delayField.set(nmsItem, 0);
-                } catch (Exception e) {
-                    if (plugin.getConfig().getBoolean("debug", false)) {
-                        plugin.getLogger().info("Failed to reset pickup delay for an item: " + e.getMessage());
+            for (Entity entity : world.getEntities()) {
+                if (entity instanceof Item item) {
+                    try {
+                        // 使用反射恢复pickupDelay为0（立即可拾取）
+                        Object nmsItem = getGetHandleMethod().invoke(item);
+                        Field field = getItemPickupDelayField();
+                        field.set(nmsItem, 0); // 设置为0，立即可拾取
+                    } catch (Exception ignored) {
+                        // 忽略反射异常
                     }
                 }
             }
         }
-        plugin.unregisterPickupEvent();
     }
 
     /**
@@ -826,7 +818,7 @@ public class PickupManager {
                             continue;
                         }
 
-                        // === 新增：支持玩家和可拾取生物 ===
+                        // === 支持玩家和可拾取生物 ===
                         World world = item.getWorld();
                         Location loc = item.getLocation();
                         double range = plugin.getPickupRange();
@@ -846,8 +838,8 @@ public class PickupManager {
                                 continue;
                             }
 
-                            // 检查该实体是否可以拾取此物品（需重载 canPickupNow）
-                            if (canPickupNow(picker, item)) {
+                            // 使用通用的canPickupNow方法检查延迟
+                            if (canPickupNow(picker, item)) {  // 修复这里！
                                 nearestPicker = picker;
                                 nearestDistSq = distSq;
                             }
@@ -858,10 +850,9 @@ public class PickupManager {
                                 performPickup(player, item); // 调用玩家专用版本
                             } else {
                                 performLivingEntityPickup(nearestPicker, item); // 调用生物通用版本
-                            } // 需重载
+                            }
                             itemIter.remove();
                         }
-                        // ==================================
                     }
 
                     if (items.isEmpty()) {
@@ -886,31 +877,6 @@ public class PickupManager {
             return mob.getCanPickupItems();
         }
         return false;
-    }
-
-    /**
-     * 恢复所有物品的原版拾取延迟（禁用插件时调用）
-     */
-    public void restoreOriginalPickupDelay() {
-        for (World world : Bukkit.getWorlds()) {
-            for (Entity entity : world.getEntities()) {
-                if (entity instanceof Item item) {
-                    PersistentDataContainer pdc = item.getPersistentDataContainer();
-
-                    // 只处理被本插件标记过的物品（有来源标记的物品）
-                    if (pdc.has(SOURCE_KEY, PersistentDataType.STRING)) {
-                        try {
-                            // 使用反射恢复pickupDelay为默认值10
-                            Object nmsItem = getGetHandleMethod().invoke(item);
-                            Field field = getItemPickupDelayField();
-                            field.set(nmsItem, 10); // 原版默认值
-                        } catch (Exception ignored) {
-                            // 忽略反射异常（通常发生在插件卸载时）
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // ====== 反射工具（增强版）======

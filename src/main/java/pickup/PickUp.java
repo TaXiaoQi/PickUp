@@ -42,42 +42,23 @@ public class PickUp extends JavaPlugin {
      */
     @Override
     public void onEnable() {
-        // 清理可能存在的重启标志文件（用于热重启检测）
+        // 清理可能存在的重启标志文件
         File restartFlag = new File("restart.flag");
         if (restartFlag.exists()) {
             if (restartFlag.delete()) {
                 getLogger().info("已清理残留的 restart.flag 文件");
             } else {
-                getLogger().warning("无法删除 restart.flag，请检查文件权限");
+                getLogger().warning("无法删除 restart.flag 文件，请检查文件权限或是否被占用");
             }
         }
 
-        // 加载配置文件
-        saveDefaultConfig();  // 如果配置文件不存在，保存默认配置
-        reloadPickup();       // 加载配置到内存
-
-        // 初始化管理器
-        this.pickupManager = new PickupManager(this);
-
-        // 初始化物品合并系统
-        initializeItemMerger();
-
-        // 注册事件监听器
-        this.pickupEventListener = new PickupEvent(this, pickupManager);
-        getServer().getPluginManager().registerEvents(pickupEventListener, this);
-
-        // 根据配置启用功能
-        if (!isPickupDisabled()) {
-            pickupManager.enable();  // 启用拾取管理器
-        }
-        if (shouldRunItemMerger()) {
-            itemMerger.start();  // 启用物品合并器
-        }
+        // 直接调用重载方法来完成初始化
+        reloadPickup();
 
         // 注册命令处理器
         ReloadCommand executor = new ReloadCommand(this);
-        Objects.requireNonNull(getCommand("up")).setExecutor(executor);  // /up 命令
-        Objects.requireNonNull(getCommand("mc")).setExecutor(executor);  // /mc 命令
+        Objects.requireNonNull(getCommand("up")).setExecutor(executor);
+        Objects.requireNonNull(getCommand("mc")).setExecutor(executor);
 
         getLogger().info("PickUp 插件已加载");
     }
@@ -103,62 +84,60 @@ public class PickUp extends JavaPlugin {
      * 可从命令调用或在插件启动时调用
      */
     public void reloadPickup() {
-        // 重新加载配置文件
-        saveDefaultConfig();  // 确保默认配置文件存在
-        reloadConfig();       // 从磁盘重新加载配置
-        FileConfiguration config = getConfig();  // 获取配置对象
+        // 1. 重新加载配置文件
+        saveDefaultConfig();
+        reloadConfig();
+        FileConfiguration config = getConfig();
 
-        // 加载拾取相关配置（带有范围限制和默认值）
+        // 2. 先停止所有功能
+        if (pickupManager != null && pickupManager.isActive()) {
+            pickupManager.disable();
+        }
+        if (itemMerger != null) {
+            itemMerger.stop();
+            itemMerger = null;
+        }
+
+        // 3. 注销事件监听器
+        unregisterPickupEvent();
+
+        // 2. 从配置中重新读取所有参数
         pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup.range", 1.5)));
         selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 5));
-
-        // 加载延迟相关配置
         playerDropDelayTicks = Math.max(0, config.getInt("pickup.delays.player-drop", 10));
         naturalDropDelayTicks = Math.max(0, config.getInt("pickup.delays.natural-drop", 5));
         instantPickupDelayTicks = Math.max(0, config.getInt("pickup.delays.instant-pickup", 0));
-
-        // 加载玩家驱动模式配置
         playerDriven = config.getBoolean("mode.player-driven", true);
         playerDrivenScanIntervalTicks = Math.max(1, config.getInt("mode.player-scan-interval", 6));
-
-        // 加载物品驱动模式配置
         itemDrivenEnabled = config.getBoolean("mode.item-driven", true);
         activeDetectionTicks = Math.max(0, config.getInt("mode.item-active-duration", 60));
         pickupAttemptIntervalTicks = Math.max(1, config.getInt("mode.item-check-interval", 2));
-
-        // 加载物品合并配置
         boolean itemMergeEnabled = config.getBoolean("custom-item-merge.enabled", true);
         itemMergeRange = config.getDouble("custom-item-merge.range", 1.0);
 
-        // 重新配置拾取管理器
-        if (pickupManager != null) {
-            pickupManager.loadConfig();  // 通知管理器重新加载配置
+        // 5. 创建新的管理器实例
+        this.pickupManager = new PickupManager(this);
+        this.pickupManager.loadConfig();
 
-            // 根据配置状态控制管理器启停
-            if (!isPickupDisabled()) {
-                // 如果应该启用拾取功能
-                if (pickupManager.isActive()) {
-                    pickupManager.disable();  // 先停止（如果需要重新配置）
-                }
-                pickupManager.enable();  // 重新启用
-            } else {
-                // 如果拾取功能被禁用
-                if (pickupManager.isActive()) {
-                    pickupManager.disable();  // 停止管理器
-                    pickupManager.restoreOriginalPickupDelay();  // 恢复原版拾取延迟
-                }
-            }
-        }
-
-        // 重新配置物品合并器
-        if (itemMerger != null) {
-            itemMerger.stop();  // 停止当前合并器
-            itemMerger = null;  // 释放引用
-        }
+        // 6. 初始化物品合并系统
         if (itemMergeEnabled) {
-            initializeItemMerger();  // 重新初始化合并器
-            if (shouldRunItemMerger()) {
-                itemMerger.start();  // 启动合并器
+            initializeItemMerger();
+        }
+
+        // 7. 创建并注册全新的事件监听器
+        this.pickupEventListener = new PickupEvent(this, pickupManager);
+        getServer().getPluginManager().registerEvents(pickupEventListener, this);
+
+        // 8. 根据配置启动功能
+        if (!isPickupDisabled()) {
+            pickupManager.enable();
+            if (itemMerger != null && shouldRunItemMerger()) {
+                itemMerger.start();
+            }
+        } else {
+            // 如果被禁用，确保恢复原版拾取延迟为0
+            if (pickupManager != null) {
+                pickupManager.restoreOriginalPickupDelayToZero();
             }
         }
 
@@ -173,8 +152,9 @@ public class PickUp extends JavaPlugin {
         int activeDuration = getConfig().getInt("custom-item-merge.active-duration-ticks", 10);
         int scanInterval = getConfig().getInt("custom-item-merge.scan-interval-ticks", 2);
 
-        // 创建物品合并器实例
+        // 仅创建物品合并器实例，假设其构造函数不再自动 start()
         this.itemMerger = new CustomItemMerger(this, itemMergeRange, activeDuration, scanInterval);
+        // 注意：此时 itemMerger 是 created but not started.
     }
 
     /**
@@ -182,11 +162,17 @@ public class PickUp extends JavaPlugin {
      * 用于命令控制或在配置重载后启用
      */
     public void startPickup() {
-        stoppedByCommand = false;  // 重置停止标志
-        pickupManager.enable();    // 启用拾取管理器
+        stoppedByCommand = false;
 
-        // 如果物品合并功能启用，也启动合并器
-        if (itemMerger != null && getConfig().getBoolean("custom-item-merge.enabled", true)) {
+        // 注销可能存在的旧事件监听器
+        unregisterPickupEvent();
+
+        // 重新注册事件监听器
+        this.pickupEventListener = new PickupEvent(this, pickupManager);
+        getServer().getPluginManager().registerEvents(pickupEventListener, this);
+
+        pickupManager.enable();
+        if (itemMerger != null && shouldRunItemMerger()) {
             itemMerger.start();
         }
     }
@@ -200,10 +186,24 @@ public class PickUp extends JavaPlugin {
 
         if (pickupManager != null) {
             pickupManager.disable();  // 停止拾取管理器
-            pickupManager.restoreOriginalPickupDelay();  // 恢复原版拾取延迟
+            // 注意：这里调用新的方法，恢复为0而不是10
         }
         if (itemMerger != null) {
             itemMerger.stop();  // 停止物品合并器
+        }
+
+        // 注销事件监听器，防止继续设置pickupDelay=6000
+        unregisterPickupEvent();
+    }
+
+    /**
+     * 注销拾取事件监听器
+     */
+    public void unregisterPickupEvent() {
+        if (pickupEventListener != null) {
+            HandlerList.unregisterAll(pickupEventListener);
+            pickupEventListener = null;
+            getLogger().info("PickupEvent 事件监听器已注销");
         }
     }
 
@@ -215,12 +215,6 @@ public class PickUp extends JavaPlugin {
         return stoppedByCommand || !getConfig().getBoolean("enabled", true);
     }
 
-    public void unregisterPickupEvent() {
-        if (pickupEventListener != null) {
-            HandlerList.unregisterAll(pickupEventListener);
-            pickupEventListener = null;
-        }
-    }
 
     /**
      * 检查是否应该运行物品合并器

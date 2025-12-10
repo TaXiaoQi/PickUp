@@ -1,5 +1,6 @@
 package pickup;
 
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -156,19 +157,23 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityPickupItem(EntityPickupItemEvent event) {
+        // 双重检查：必须插件启用且拾取功能未禁用
         if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
             return;
         }
 
-        // 记录调试信息
-        if (plugin.getConfig().getBoolean("debug", false)) {
-            plugin.getLogger().info("EntityPickupItemEvent 被取消 - " +
-                    event.getEntity().getName() + " 拾取 " +
-                    event.getItem().getItemStack().getType());
+        // 额外的安全检查
+        if (!plugin.isStoppedByCommand() && plugin.getConfig().getBoolean("enabled", true)) {
+            // 记录调试信息
+            if (plugin.getConfig().getBoolean("debug", false)) {
+                plugin.getLogger().info("EntityPickupItemEvent 被取消 - " +
+                        event.getEntity().getName() + " 拾取 " +
+                        event.getItem().getItemStack().getType());
+            }
+            Bukkit.getLogger().info("[DEBUG] 拾取事件触发！取消原版拾取");
+            // 🔒 取消原版拾取
+            event.setCancelled(true);
         }
-
-        // 🔒 取消原版拾取
-        event.setCancelled(true);
     }
 
     /// 事件优先级说明：
