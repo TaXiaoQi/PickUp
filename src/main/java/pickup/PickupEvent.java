@@ -1,5 +1,6 @@
 package pickup;
 
+import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -7,8 +8,11 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
+import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.event.entity.EntityPickupItemEvent;
 
 /**
  * 拾取事件监听器类
@@ -103,6 +107,27 @@ public class PickupEvent implements Listener {
     }
 
     /**
+     * 处理容器（如漏斗）自动拾取物品事件
+     * 清理带有拾取标记的 ItemStack，确保其能正常堆叠
+     */
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    public void onInventoryPickup(InventoryPickupItemEvent event) {
+        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+            return;
+        }
+
+        Item item = event.getItem();
+
+        ItemStack original = item.getItemStack();
+        if (original.getType().isAir()) return;
+
+        if (pickupManager.hasPickupMark(original)) {
+            ItemStack clean = pickupManager.createCleanStack(original);
+            item.setItemStack(clean);
+        }
+    }
+
+    /**
      * 处理玩家移动事件 - 用于玩家驱动模式
      * 当玩家移动时触发，用于检测附近的物品并尝试拾取
      *
@@ -125,6 +150,27 @@ public class PickupEvent implements Listener {
             pickupManager.tryPickup(player);
         }
     }
+    /**
+     * 拦截并取消所有原版物品拾取行为
+     * 插件启用时，所有玩家都无法通过原版机制拾取任何物品
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityPickupItem(EntityPickupItemEvent event) {
+        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+            return;
+        }
+
+        // 记录调试信息
+        if (plugin.getConfig().getBoolean("debug", false)) {
+            plugin.getLogger().info("EntityPickupItemEvent 被取消 - " +
+                    event.getEntity().getName() + " 拾取 " +
+                    event.getItem().getItemStack().getType());
+        }
+
+        // 🔒 取消原版拾取
+        event.setCancelled(true);
+    }
+
     /// 事件优先级说明：
     /// - LOWEST: 最早执行，用于处理基础的物品生成和掉落事件
     /// - MONITOR: 最后执行，用于玩家移动后的拾取检测，避免干扰其他插件

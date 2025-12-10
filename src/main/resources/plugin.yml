@@ -19,6 +19,7 @@ commands:
     description: 服务器管理命令（含重启）
     usage: /<command> restart
     permission: pickup.admin
+    permission-message: §c你没有权限使用此命令！
 permissions:
   pickup.admin:
     description: 允许管理拾取插件

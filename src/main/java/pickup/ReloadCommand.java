@@ -68,7 +68,7 @@ public class ReloadCommand implements CommandExecutor {
      */
     private boolean handleMcCommand(CommandSender sender, String[] args) {
         // 检查参数格式：/mc reload
-        if (args.length == 0 || !args[0].equalsIgnoreCase("reload")) {
+        if (args.length == 0 || !args[0].equalsIgnoreCase("restart")) {
             sender.sendMessage("§c用法: /mc reload §7- 重启服务器");
             return false; // 返回false会显示命令用法
         }

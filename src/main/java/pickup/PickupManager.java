@@ -7,10 +7,13 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.inventory.*;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.inventory.meta.Damageable;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -167,9 +170,9 @@ public class PickupManager {
      * @param event 实体死亡事件
      */
     public void handleEntityDeath(EntityDeathEvent event) {
-        // 仅标记物品堆栈的来源为"natural"（实体死亡属于自然掉落）
-        // 注意：此时物品实体尚未生成，需要先标记ItemStack
         for (ItemStack stack : event.getDrops()) {
+            if (stack == null || stack.getType().isAir()) continue;
+            // 直接标记为 NATURAL_DROP（与方块掉落一致）
             markItemStackAsNaturalDrop(stack);
         }
     }
@@ -260,7 +263,7 @@ public class PickupManager {
             Object nmsItem = getGetHandleMethod().invoke(item);
             // 获取pickupDelay字段并设置为最大值（禁止原版拾取）
             Field delayField = getItemPickupDelayField();
-            delayField.set(nmsItem, Integer.MAX_VALUE);
+            delayField.set(nmsItem, 6000);
         } catch (Exception e) {
             // 建议降级为debug日志，避免刷屏WARN
             // 反射失败通常是因为版本不兼容或服务器修改
@@ -299,6 +302,151 @@ public class PickupManager {
 
         // 生物不需要冷却时间（原版行为），所以直接返回 true
     }
+
+    // 容器拾取时检测是否是我们的物品
+    public boolean hasPickupMark(ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) return false;
+        ItemMeta meta = stack.getItemMeta();
+        if (meta == null) return false;
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        return pdc.has(SOURCE_KEY, PersistentDataType.STRING) ||
+                pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG) ||
+                pdc.has(DROPPED_BY_KEY, PersistentDataType.STRING);
+    }
+
+    @SuppressWarnings("deprecation") // 兼容 1.20.4 及以下；1.20.5+ 虽弃用但可用
+    private boolean hasMeaningfulData(ItemMeta meta) {
+        if (meta == null) return false;
+
+        // Display Name
+        if (meta.hasDisplayName()) {
+            return true;
+        }
+
+        // Lore
+        List<String> lore = meta.getLore();
+        if (lore != null && !lore.isEmpty()) {
+            return true;
+        }
+
+        // Enchants
+        if (!meta.getEnchants().isEmpty()) {
+            return true;
+        }
+
+        // Custom Model Data
+        if (meta.hasCustomModelData()) {
+            return true;
+        }
+
+        // Damage (for tools/weapons)
+        if (meta instanceof Damageable damageable) {
+            if (damageable.getDamage() > 0) {
+                return true;
+            }
+        }
+
+        // Potion effects
+        if (meta instanceof PotionMeta potionMeta) {
+            if (potionMeta.getBasePotionType() != null) {
+                return true;
+            }
+        }
+
+        // Stored Enchants (Enchanted Books)
+        if (meta instanceof EnchantmentStorageMeta esm) {
+            if (!esm.getStoredEnchants().isEmpty()) {
+                return true;
+            }
+        }
+
+        // Persistent Data (including our own, though we just removed keys)
+        return !meta.getPersistentDataContainer().isEmpty();
+    }
+
+    ItemStack createCleanStack(ItemStack original) {
+        if (original == null || original.getType().isAir()) {
+            return original;
+        }
+
+        Material type = original.getType();
+
+        // 保护带状态的方块物品
+        if (BLOCK_ITEMS_WITH_NBT.contains(type)) {
+            ItemStack clean = original.clone();
+            ItemMeta meta = clean.getItemMeta();
+            if (meta != null) {
+                PersistentDataContainer pdc = meta.getPersistentDataContainer();
+                pdc.remove(SOURCE_KEY);
+                pdc.remove(SPAWN_TICK_KEY);
+                pdc.remove(DROPPED_BY_KEY);
+                clean.setItemMeta(meta);
+            }
+            return clean;
+        }
+
+        // 普通物品处理
+        ItemStack clean = original.clone();
+        ItemMeta meta = clean.getItemMeta();
+
+        if (meta == null) {
+            return new ItemStack(type, original.getAmount());
+        }
+
+        // 清除插件标记
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        pdc.remove(SOURCE_KEY);
+        pdc.remove(SPAWN_TICK_KEY);
+        pdc.remove(DROPPED_BY_KEY);
+
+        if (hasMeaningfulData(meta)) {
+            clean.setItemMeta(meta);
+            return clean;
+        } else {
+            return new ItemStack(type, original.getAmount());
+        }
+    }
+
+    private static final Set<Material> BLOCK_ITEMS_WITH_NBT = Set.of(
+            // 潜影盒（所有颜色）
+            Material.SHULKER_BOX,
+            Material.WHITE_SHULKER_BOX,
+            Material.ORANGE_SHULKER_BOX,
+            Material.MAGENTA_SHULKER_BOX,
+            Material.LIGHT_BLUE_SHULKER_BOX,
+            Material.YELLOW_SHULKER_BOX,
+            Material.LIME_SHULKER_BOX,
+            Material.PINK_SHULKER_BOX,
+            Material.GRAY_SHULKER_BOX,
+            Material.LIGHT_GRAY_SHULKER_BOX,
+            Material.CYAN_SHULKER_BOX,
+            Material.PURPLE_SHULKER_BOX,
+            Material.BLUE_SHULKER_BOX,
+            Material.BROWN_SHULKER_BOX,
+            Material.GREEN_SHULKER_BOX,
+            Material.RED_SHULKER_BOX,
+            Material.BLACK_SHULKER_BOX,
+
+            // 蜂箱 & 蜂巢
+            Material.BEEHIVE,
+            Material.BEE_NEST,
+
+            // 刷怪笼
+            Material.SPAWNER,
+
+            // 命令方块系列
+            Material.COMMAND_BLOCK,
+            Material.CHAIN_COMMAND_BLOCK,
+            Material.REPEATING_COMMAND_BLOCK,
+
+            // 结构方块
+            Material.STRUCTURE_BLOCK,
+
+            // 信标
+            Material.BEACON
+            // 注意：花盆在 1.20.5+ 使用 BlockStateTag，但通常可堆叠（空花盆），暂不列入
+    );
+
 
     /**
      * 执行非玩家 LivingEntity 拾取物品（支持自动装备）
@@ -897,17 +1045,4 @@ public class PickupManager {
         return active;
     }
 
-    // 清除打标
-    private ItemStack createCleanStack(ItemStack original) {
-        ItemStack clean = original.clone();
-        ItemMeta meta = clean.getItemMeta();
-        if (meta != null) {
-            PersistentDataContainer pdc = meta.getPersistentDataContainer();
-            pdc.remove(SOURCE_KEY);
-            pdc.remove(SPAWN_TICK_KEY);
-            pdc.remove(DROPPED_BY_KEY);
-            clean.setItemMeta(meta);
-        }
-        return clean;
-    }
 }
