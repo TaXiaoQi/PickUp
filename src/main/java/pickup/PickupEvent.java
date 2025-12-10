@@ -6,6 +6,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
@@ -26,7 +28,10 @@ public class PickupEvent implements Listener {
 
     // 插件主类引用，用于访问配置和状态
     private final PickupManager pickupManager; // 拾取管理器，负责实际的处理逻辑
-    private final PickUp plugin;               // 插件主类实例
+    private final PickUp plugin;              // 插件主类实例
+    // 反射缓存
+    private static volatile Method cachedGetHandleMethod = null;
+    private static volatile Field cachedPickupDelayField = null;
 
     /**
      * 构造函数
@@ -111,20 +116,113 @@ public class PickupEvent implements Listener {
      * 处理容器（如漏斗）自动拾取物品事件
      * 清理带有拾取标记的 ItemStack，确保其能正常堆叠
      */
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.LOWEST)
     public void onInventoryPickup(InventoryPickupItemEvent event) {
         if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
             return;
         }
 
         Item item = event.getItem();
+        ItemStack stack = item.getItemStack();
+        if (stack.getType().isAir()) return;
 
-        ItemStack original = item.getItemStack();
-        if (original.getType().isAir()) return;
-
-        if (pickupManager.hasPickupMark(original)) {
-            ItemStack clean = pickupManager.createCleanStack(original);
+        // 检查是否是插件物品
+        if (pickupManager.hasPickupMark(stack)) {
+            // 1. 清理PDC标签
+            ItemStack clean = pickupManager.createCleanStack(stack);
             item.setItemStack(clean);
+
+            // 2. 同时清理pickupDelay（设置为0，让容器可以立即拾取）
+            try {
+                Object nmsItem = getGetHandleMethod().invoke(item);
+                Field delayField = getItemPickupDelayField();
+                int currentDelay = delayField.getInt(nmsItem);
+
+                // 只有当前延迟>0时才需要清理
+                if (currentDelay > 0) {
+                    delayField.set(nmsItem, 0);
+
+                    if (plugin.getConfig().getBoolean("debug", false)) {
+                        plugin.getLogger().info("容器拾取: 清理PDC标签，设置pickupDelay: " +
+                                currentDelay + " -> 0 (" + clean.getType() + ")");
+                    }
+                }
+            } catch (Exception e) {
+                if (plugin.getConfig().getBoolean("debug", false)) {
+                    plugin.getLogger().info("清理pickupDelay失败: " + e.getMessage());
+                }
+            }
+        }
+        // 让容器自己处理正常地拾取逻辑
+    }
+
+    /**
+     * 获取CraftItem.getHandle()方法（反射）
+     */
+    private static Method getGetHandleMethod() throws Exception {
+        if (cachedGetHandleMethod != null) {
+            return cachedGetHandleMethod;
+        }
+
+        synchronized (PickupEvent.class) {
+            if (cachedGetHandleMethod != null) {
+                return cachedGetHandleMethod;
+            }
+
+            String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
+            Class<?> craftItemClass = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftItem");
+            cachedGetHandleMethod = craftItemClass.getMethod("getHandle");
+            cachedGetHandleMethod.setAccessible(true);
+            return cachedGetHandleMethod;
+        }
+    }
+
+    /**
+     * 获取ItemEntity类的pickupDelay字段（反射）
+     */
+    private static Field getItemPickupDelayField() throws Exception {
+        if (cachedPickupDelayField != null) {
+            return cachedPickupDelayField;
+        }
+
+        synchronized (PickupEvent.class) {
+            if (cachedPickupDelayField != null) {
+                return cachedPickupDelayField;
+            }
+
+            Class<?> nmsItemClass;
+            try {
+                // 尝试1.17+的新映射类名
+                nmsItemClass = Class.forName("net.minecraft.world.entity.item.ItemEntity");
+            } catch (ClassNotFoundException e1) {
+                // 尝试1.16及以下的旧NMS路径
+                String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
+                nmsItemClass = Class.forName("net.minecraft.server." + version + ".EntityItem");
+            }
+
+            // 尝试不同的字段名
+            String[] candidates = {
+                    "pickupDelay",   // 未混淆
+                    "bK",            // 1.17 ~ 1.19.4
+                    "c",             // 1.20.0 ~ 1.20.4
+                    "d",             // 1.20.5+
+                    "e"              // 预防未来变化
+            };
+
+            for (String fieldName : candidates) {
+                try {
+                    Field field = nmsItemClass.getDeclaredField(fieldName);
+                    if (field.getType() == int.class) {
+                        field.setAccessible(true);
+                        cachedPickupDelayField = field;
+                        return field;
+                    }
+                } catch (NoSuchFieldException ignored) {
+                    // 尝试下一个字段名
+                }
+            }
+
+            throw new RuntimeException("Could not find pickupDelay field");
         }
     }
 
@@ -151,6 +249,7 @@ public class PickupEvent implements Listener {
             pickupManager.tryPickup(player);
         }
     }
+
     /**
      * 拦截并取消所有原版物品拾取行为
      * 插件启用时，所有玩家都无法通过原版机制拾取任何物品
@@ -170,7 +269,6 @@ public class PickupEvent implements Listener {
                         event.getEntity().getName() + " 拾取 " +
                         event.getItem().getItemStack().getType());
             }
-            Bukkit.getLogger().info("[DEBUG] 拾取事件触发！取消原版拾取");
             // 🔒 取消原版拾取
             event.setCancelled(true);
         }
@@ -181,4 +279,4 @@ public class PickupEvent implements Listener {
     /// - MONITOR: 最后执行，用于玩家移动后的拾取检测，避免干扰其他插件
     /// ignoreCancelled = true: 如果事件被其他插件取消，则跳过处理
     /// 这样可以避免在事件已被取消的情况下仍然执行不必要的逻辑
-    }
+}
