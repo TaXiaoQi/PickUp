@@ -8,15 +8,17 @@ enabled: true
 # ========================
 pickup:
   # 全局拾取半径（单位：方块），有效范围：0.1 ~ 10.0
-  range: 2
+  range: 1.5
   # 玩家丢弃冷却（单位：ticks）（防“扔了马上又捡”）
   self-immune-ticks: 5
+  # 是否允许自动拾取到副手（默认false，原版行为）
+  offhand-pickup: false
   # 物品拾取冷却（单位：ticks）
   delays:
     # 玩家丢弃物品拾取冷却（单位：ticks）
-    player-drop: 20
+    player-drop: 10
     # 实体掉落物品拾取冷却（单位：ticks）
-    natural-drop: 10
+    natural-drop: 5
     # 其他类型物品拾取冷却（单位：ticks）
     instant-pickup: 0
 
@@ -48,3 +50,14 @@ custom-item-merge:
   active-duration-ticks: 10
   # 合并检查频率（单位：ticks）：值越小响应越快，CPU越高
   scan-interval-ticks: 2
+
+# ========================
+# 死亡日志设置(播报死亡坐标)
+# ========================
+death-log:
+  # 是否启用死亡日志
+  enabled: true
+  # 是否向OP玩家广播死亡信息
+  broadcast-to-ops: false
+  # 是否向死亡玩家发送私信
+  send-private-message: true

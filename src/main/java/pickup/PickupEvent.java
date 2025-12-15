@@ -13,6 +13,8 @@ import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.Location;
 
 /**
  * 拾取事件监听器类
@@ -107,6 +109,83 @@ public class PickupEvent implements Listener {
     }
 
     /**
+     * 当玩家死亡时触发，播报死亡日志
+     *
+     * @param event 玩家死亡事件
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        // 检查死亡日志功能是否启用
+        if (!plugin.isDeathLogEnabled()) {  // 使用 Getter 方法
+            return;
+        }
+
+        Player player = event.getEntity();
+
+        // 获取死亡位置信息
+        Location deathLocation = player.getLocation();
+        String worldName = deathLocation.getWorld().getName();
+        String dimension = getDimensionName(worldName); // 转换为友好维度名称
+        int x = deathLocation.getBlockX();
+        int y = deathLocation.getBlockY();
+        int z = deathLocation.getBlockZ();
+
+        // 1. 控制台日志（固定格式）
+        plugin.getLogger().info("玩家死亡日志 - 玩家: " + player.getName() +
+                " 在 " + dimension + " 死亡 (" + x + ", " + y + ", " + z + ")");
+
+        // 2. 向OP玩家广播（如果需要）
+        if (plugin.isDeathLogBroadcastToOps()) {  // 使用 Getter 方法
+            String opMessage = String.format("§c[死亡日志] §f%s §7在 §e%s §7死亡 (§6%d, %d, %d§7)",
+                    player.getName(), dimension, x, y, z);
+
+            // 向所有在线OP玩家发送消息
+            for (Player onlinePlayer : plugin.getServer().getOnlinePlayers()) {
+                if (onlinePlayer.isOp()) {
+                    onlinePlayer.sendMessage(opMessage);
+                }
+            }
+        }
+
+        // 3. 私信死亡玩家（如果需要）
+        if (plugin.isDeathLogSendPrivateMessage()) {
+            // 延迟1tick确保玩家能看到消息
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (player.isOnline()) {
+                    // 格式：❌ 你刚才在 主世界(123, 64, -456) 死亡
+                    player.sendMessage("§e❌ §f你刚才在 §a" + dimension + "§6(" + x + "§8, §6" + y + "§8, §6" + z + "§6) §f死亡");
+                }
+            }, 1L);
+        }
+    }
+
+    /**
+     * 将世界名称转换为友好维度名称
+     * @param worldName 世界名称
+     * @return 友好维度名称
+     */
+    private String getDimensionName(String worldName) {
+        if (worldName == null || worldName.isEmpty()) {
+            return "未知维度";
+        }
+
+        String lowerWorldName = worldName.toLowerCase();
+        switch (lowerWorldName) {
+            case "world":
+                return "主世界";
+            case "world_nether":
+                return "下界";
+            case "world_the_end":
+                return "末地";
+            default:
+                // 尝试从名称中提取维度信息
+                if (lowerWorldName.contains("nether")) return "下界";
+                if (lowerWorldName.contains("the_end") || lowerWorldName.contains("end")) return "末地";
+                return worldName; // 返回原始名称
+        }
+    }
+
+    /**
      * 处理容器（如漏斗）自动拾取物品事件
      * 清理带有拾取标记的 ItemStack，确保其能正常堆叠
      */
@@ -150,6 +229,7 @@ public class PickupEvent implements Listener {
             pickupManager.tryPickup(player);
         }
     }
+
     /**
      * 拦截并取消所有原版物品拾取行为
      * 插件启用时，所有玩家都无法通过原版机制拾取任何物品
@@ -161,17 +241,15 @@ public class PickupEvent implements Listener {
             return;
         }
 
-        // 额外的安全检查
-        if (!plugin.isStoppedByCommand() && plugin.getConfig().getBoolean("enabled", true)) {
-            // 记录调试信息
-            if (plugin.getConfig().getBoolean("debug", false)) {
-                plugin.getLogger().info("EntityPickupItemEvent 被取消 - " +
-                        event.getEntity().getName() + " 拾取 " +
-                        event.getItem().getItemStack().getType());
-            }
-            // 🔒 取消原版拾取
-            event.setCancelled(true);
+        // 记录调试信息（可选）
+        if (plugin.getConfig().getBoolean("debug", false)) {
+            plugin.getLogger().info("EntityPickupItemEvent 被取消 - " +
+                    event.getEntity().getName() + " 拾取 " +
+                    event.getItem().getItemStack().getType());
         }
+
+        // 🔒 取消原版拾取（因为我们插件接管拾取）
+        event.setCancelled(true);
     }
 
     /// 事件优先级说明：

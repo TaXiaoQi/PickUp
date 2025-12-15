@@ -23,12 +23,17 @@ public class PickUp extends JavaPlugin {
     // 配置参数（从配置文件读取）
     private boolean playerDriven;             // 玩家驱动模式是否启用
     private double pickupRange;               // 拾取范围（方块）
+    private boolean offhandPickupEnabled;           // 副手拾取是否启用
     private int selfImmuneTicks;              // 自身掉落物免疫时间（tick）
     private int playerDrivenScanIntervalTicks; // 玩家驱动扫描间隔（tick）
 
     private boolean itemDrivenEnabled;        // 物品驱动模式是否启用
     private int activeDetectionTicks;         // 物品活跃检测时间（tick）
     private int pickupAttemptIntervalTicks;   // 拾取尝试间隔（tick）
+
+    private boolean deathLogEnabled;              // 是否启用死亡日志
+    private boolean deathLogBroadcastToOps;       // 是否向OP玩家广播死亡信息
+    private boolean deathLogSendPrivateMessage;   // 是否向死亡玩家发送私信
 
     private int playerDropDelayTicks;         // 玩家掉落延迟（tick）
     private int naturalDropDelayTicks;        // 自然掉落延迟（tick）
@@ -101,34 +106,47 @@ public class PickUp extends JavaPlugin {
         // 3. 注销事件监听器
         unregisterPickupEvent();
 
-        // 2. 从配置中重新读取所有参数
-        pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup.range", 1.5)));
-        selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 5));
-        playerDropDelayTicks = Math.max(0, config.getInt("pickup.delays.player-drop", 10));
-        naturalDropDelayTicks = Math.max(0, config.getInt("pickup.delays.natural-drop", 5));
-        instantPickupDelayTicks = Math.max(0, config.getInt("pickup.delays.instant-pickup", 0));
+        // 4. 从配置中重新读取所有参数（确保顺序正确）
         playerDriven = config.getBoolean("mode.player-driven", true);
         playerDrivenScanIntervalTicks = Math.max(1, config.getInt("mode.player-scan-interval", 6));
         itemDrivenEnabled = config.getBoolean("mode.item-driven", true);
         activeDetectionTicks = Math.max(0, config.getInt("mode.item-active-duration", 60));
         pickupAttemptIntervalTicks = Math.max(1, config.getInt("mode.item-check-interval", 2));
-        boolean itemMergeEnabled = config.getBoolean("custom-item-merge.enabled", true);
+
+        // 拾取范围相关
+        pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup.range", 1.5)));
+        selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 5));
+        offhandPickupEnabled = config.getBoolean("pickup.offhand-pickup", false);
+
+        // 延迟配置
+        playerDropDelayTicks = Math.max(0, config.getInt("pickup.delays.player-drop", 10));
+        naturalDropDelayTicks = Math.max(0, config.getInt("pickup.delays.natural-drop", 5));
+        instantPickupDelayTicks = Math.max(0, config.getInt("pickup.delays.instant-pickup", 0));
+
+        // 死亡日志配置
+        deathLogEnabled = config.getBoolean("death-log.enabled", true);
+        deathLogBroadcastToOps = config.getBoolean("death-log.broadcast-to-ops", false);
+        deathLogSendPrivateMessage = config.getBoolean("death-log.send-private-message", true);
+
+        // 合并相关
         itemMergeRange = config.getDouble("custom-item-merge.range", 1.0);
 
         // 5. 创建新的管理器实例
         this.pickupManager = new PickupManager(this);
+
+        // 6. 必须在这里调用 loadConfig()，将配置加载到 PickupManager
         this.pickupManager.loadConfig();
 
-        // 6. 初始化物品合并系统
-        if (itemMergeEnabled) {
+        // 7. 初始化物品合并系统
+        if (config.getBoolean("custom-item-merge.enabled", true)) {
             initializeItemMerger();
         }
 
-        // 7. 创建并注册全新的事件监听器
+        // 8. 创建并注册全新的事件监听器
         this.pickupEventListener = new PickupEvent(this, pickupManager);
         getServer().getPluginManager().registerEvents(pickupEventListener, this);
 
-        // 8. 根据配置启动功能
+        // 9. 根据配置启动功能
         if (!isPickupDisabled()) {
             pickupManager.enable();
             if (itemMerger != null && shouldRunItemMerger()) {
@@ -186,7 +204,6 @@ public class PickUp extends JavaPlugin {
 
         if (pickupManager != null) {
             pickupManager.disable();  // 停止拾取管理器
-            // 注意：这里调用新的方法，恢复为0而不是10
         }
         if (itemMerger != null) {
             itemMerger.stop();  // 停止物品合并器
@@ -238,4 +255,8 @@ public class PickUp extends JavaPlugin {
     public int getInstantPickupDelayTicks() { return instantPickupDelayTicks; }
     public CustomItemMerger getItemMerger() { return itemMerger; }
     public boolean isStoppedByCommand() { return stoppedByCommand; }
+    public boolean isOffhandPickupEnabled() { return offhandPickupEnabled; }
+    public boolean isDeathLogEnabled() { return deathLogEnabled; }
+    public boolean isDeathLogBroadcastToOps() { return deathLogBroadcastToOps; }
+    public boolean isDeathLogSendPrivateMessage() { return deathLogSendPrivateMessage; }
 }
