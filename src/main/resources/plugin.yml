@@ -13,6 +13,10 @@ commands:
       /<command> false - 关闭插件拾取（恢复原版）
       /<command> true - 开启插件拾取（禁止原版）
       /<command> status - 查看插件状态
+      /<command> set <key> <value> - 动态设置配置项
+      /<command> get <key> - 获取配置值
+      /<command> list - 列出所有配置项
+    aliases: [Pickup, pickup]
     permission: pickup.admin
     permission-message: §c你没有权限使用此命令！
   mc:

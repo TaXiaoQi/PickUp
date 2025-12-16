@@ -13,12 +13,13 @@ pickup:
   self-immune-ticks: 5
   # 是否允许自动拾取到副手（默认false，原版行为）
   offhand-pickup: false
+  # 死亡不掉落
   # 物品拾取冷却（单位：ticks）
   delays:
     # 玩家丢弃物品拾取冷却（单位：ticks）
-    player-drop: 10
+    player-drop: 15
     # 实体掉落物品拾取冷却（单位：ticks）
-    natural-drop: 5
+    natural-drop: 10
     # 其他类型物品拾取冷却（单位：ticks）
     instant-pickup: 0
 
@@ -55,9 +56,7 @@ custom-item-merge:
 # 死亡日志设置(播报死亡坐标)
 # ========================
 death-log:
-  # 是否启用死亡日志
+  # 启用死亡日志（在后台日志输出死亡坐标）
   enabled: true
-  # 是否向OP玩家广播死亡信息
-  broadcast-to-ops: false
-  # 是否向死亡玩家发送私信
+  # 启用死亡坐标播报（替换原版死亡播报）
   send-private-message: true

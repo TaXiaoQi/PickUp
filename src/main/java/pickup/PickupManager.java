@@ -24,12 +24,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * 拾取管理器 - 核心逻辑处理类
  * 负责实现双驱动模式（玩家驱动+物品驱动）的物品自动拾取系统
  */
-public class PickupManager {
+public class PickupManager implements PickupConfig.ConfigChangeListener {
 
     // 插件主类引用
     private final PickUp plugin;
+    private final PickupConfig config; // 添加 config 字段
 
-    // 配置参数（从插件主类加载）
+    // 配置参数（从 config 直接加载）
     private double pickupRangeSq;                // 拾取范围的平方（用于距离比较优化）
     private int playerDropDelayTicks;           // 玩家丢弃物品的拾取延迟（tick）
     private int naturalDropDelayTicks;          // 自然掉落物品的拾取延迟（tick）
@@ -54,11 +55,19 @@ public class PickupManager {
     private BukkitRunnable itemDetectionTask = null; // 物品检测定时任务
 
     /**
-     * 构造函数
+     * 构造函数（带 config 参数）
      * @param plugin 插件主类实例
+     * @param config 配置管理器
      */
-    public PickupManager(PickUp plugin) {
+    public PickupManager(PickUp plugin, PickupConfig config) {
         this.plugin = plugin;
+        this.config = config;
+
+        // 注册为配置变更监听器
+        this.config.addChangeListener(this);
+
+        // 加载配置
+        loadConfig();
     }
 
     /**
@@ -70,27 +79,61 @@ public class PickupManager {
     }
 
     /**
-     * 从插件主类加载配置参数
-     * 应在配置重载时调用
+     * 从配置管理器加载配置参数
      */
     public void loadConfig() {
-        double range = plugin.getPickupRange();
-        this.pickupRangeSq = range * range;
-
-        // 确保从 plugin 中获取延迟配置
-        this.playerDropDelayTicks = plugin.getPlayerDropDelayTicks();
-        this.naturalDropDelayTicks = plugin.getNaturalDropDelayTicks();
-        this.instantPickupDelayTicks = plugin.getInstantPickupDelayTicks();
-        this.selfImmuneTicks = plugin.getSelfImmuneTicks();
-        this.activeDetectionTicks = plugin.getActiveDetectionTicks();
-
-        // 添加调试日志
         plugin.getLogger().info("PickupManager配置加载：");
-        plugin.getLogger().info("- playerDropDelayTicks: " + playerDropDelayTicks);
-        plugin.getLogger().info("- naturalDropDelayTicks: " + naturalDropDelayTicks);
-        plugin.getLogger().info("- instantPickupDelayTicks: " + instantPickupDelayTicks);
-        plugin.getLogger().info("- selfImmuneTicks: " + selfImmuneTicks);
+        plugin.getLogger().info("- pickupRange: " + config.getPickupRange());
+        plugin.getLogger().info("- playerDropDelayTicks: " + config.getPlayerDropDelayTicks());
+        plugin.getLogger().info("- naturalDropDelayTicks: " + config.getNaturalDropDelayTicks());
+        plugin.getLogger().info("- instantPickupDelayTicks: " + config.getInstantPickupDelayTicks());
+        plugin.getLogger().info("- selfImmuneTicks: " + config.getSelfImmuneTicks());
+        plugin.getLogger().info("- activeDetectionTicks: " + config.getActiveDetectionTicks());
+
+        // 计算平方值
+        this.pickupRangeSq = config.getPickupRange() * config.getPickupRange();
+        this.playerDropDelayTicks = config.getPlayerDropDelayTicks();
+        this.naturalDropDelayTicks = config.getNaturalDropDelayTicks();
+        this.instantPickupDelayTicks = config.getInstantPickupDelayTicks();
+        this.selfImmuneTicks = config.getSelfImmuneTicks();
+        this.activeDetectionTicks = config.getActiveDetectionTicks();
+
         plugin.getLogger().info("- pickupRangeSq: " + pickupRangeSq);
+    }
+
+    /**
+     * 配置变更监听器实现
+     * 当配置通过命令动态修改时，立即更新内存中的值
+     */
+    @Override
+    public void onConfigChanged(String key, Object value) {
+        plugin.getLogger().info("配置变更: " + key + " = " + value);
+
+        switch (key) {
+            case "pickup.range":
+                this.pickupRangeSq = (double) value * (double) value;
+                plugin.getLogger().info("更新拾取范围平方值: " + pickupRangeSq);
+                break;
+            case "pickup.delays.player-drop":
+                this.playerDropDelayTicks = (int) value;
+                break;
+            case "pickup.delays.natural-drop":
+                this.naturalDropDelayTicks = (int) value;
+                break;
+            case "pickup.delays.instant-pickup":
+                this.instantPickupDelayTicks = (int) value;
+                break;
+            case "pickup.self-immune-ticks":
+                this.selfImmuneTicks = (int) value;
+                break;
+            case "mode.item-active-duration":
+                this.activeDetectionTicks = (int) value;
+                break;
+            case "__RELOAD_ALL__":
+                // 当配置完全重载时，重新加载所有配置
+                loadConfig();
+                break;
+        }
     }
 
     // ====== 公共入口：由 PickupEvent 调用 ======

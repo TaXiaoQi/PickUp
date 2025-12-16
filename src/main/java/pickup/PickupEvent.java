@@ -1,5 +1,8 @@
 package pickup;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.World;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -15,6 +18,9 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.Location;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.logging.Level;
 
 /**
  * 拾取事件监听器类
@@ -115,74 +121,63 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerDeath(PlayerDeathEvent event) {
-        // 检查死亡日志功能是否启用
-        if (!plugin.isDeathLogEnabled()) {  // 使用 Getter 方法
-            return;
-        }
+        if (!plugin.isDeathLogEnabled()) return;
 
         Player player = event.getEntity();
+        Location loc = player.getLocation();
+        World world = loc.getWorld();
+        String dimension = getDimensionName(world);
+        int x = loc.getBlockX(), y = loc.getBlockY(), z = loc.getBlockZ();
 
-        // 获取死亡位置信息
-        Location deathLocation = player.getLocation();
-        String worldName = deathLocation.getWorld().getName();
-        String dimension = getDimensionName(worldName); // 转换为友好维度名称
-        int x = deathLocation.getBlockX();
-        int y = deathLocation.getBlockY();
-        int z = deathLocation.getBlockZ();
+        plugin.getLogger().info("玩家 " + player.getName() +
+                " 在 " + dimension + " (" + x + ", " + y + ", " + z + ") 死亡");
 
-        // 1. 控制台日志（固定格式）
-        plugin.getLogger().info("玩家死亡日志 - 玩家: " + player.getName() +
-                " 在 " + dimension + " 死亡 (" + x + ", " + y + ", " + z + ")");
+        if (plugin.isDeathLogSendPrivateMessage()) {
+            Component original = event.deathMessage();
+            if (original == null) return;
 
-        // 2. 向OP玩家广播（如果需要）
-        if (plugin.isDeathLogBroadcastToOps()) {  // 使用 Getter 方法
-            String opMessage = String.format("§c[死亡日志] §f%s §7在 §e%s §7死亡 (§6%d, %d, %d§7)",
-                    player.getName(), dimension, x, y, z);
+            try {
+                LegacyComponentSerializer serializer = LegacyComponentSerializer.legacySection();
+                String originalText = serializer.serialize(original);
+                String playerName = player.getName();
 
-            // 向所有在线OP玩家发送消息
-            for (Player onlinePlayer : plugin.getServer().getOnlinePlayers()) {
-                if (onlinePlayer.isOp()) {
-                    onlinePlayer.sendMessage(opMessage);
-                }
+                String coordinatePart = "§8[§e" + dimension + " §6(" + x + ", " + y + ", " + z + ")§8]";
+                String newMessage = buildDeathMessage(originalText, playerName, coordinatePart);
+
+                event.deathMessage(serializer.deserialize(newMessage));
+
+            } catch (Exception e) {
+                plugin.getLogger().log(Level.WARNING, "死亡消息处理失败", e);
+                // 使用原始 original 构建 fallback
+                String fallback = player.getName() + " §8[" + dimension + " §6(" + x + ", " + y + ", " + z + ")§8]§r"
+                        + LegacyComponentSerializer.legacySection().serialize(original);
+                event.deathMessage(Component.text(fallback));
             }
         }
+    }
 
-        // 3. 私信死亡玩家（如果需要）
-        if (plugin.isDeathLogSendPrivateMessage()) {
-            // 延迟1tick确保玩家能看到消息
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-                if (player.isOnline()) {
-                    // 格式：❌ 你刚才在 主世界(123, 64, -456) 死亡
-                    player.sendMessage("§e❌ §f你刚才在 §a" + dimension + "§6(" + x + "§8, §6" + y + "§8, §6" + z + "§6) §f死亡");
-                }
-            }, 1L);
+    private static @NotNull String buildDeathMessage(String originalText, String playerName, String coordinatePart) {
+        String newMessage;
+        if (originalText.startsWith(playerName)) {
+            newMessage = playerName + coordinatePart + originalText.substring(playerName.length());
+        } else {
+            newMessage = originalText + " §8(" + coordinatePart + "§8)";
         }
+        return newMessage + "§r"; // 总是重置颜色
     }
 
     /**
      * 将世界名称转换为友好维度名称
-     * @param worldName 世界名称
      * @return 友好维度名称
      */
-    private String getDimensionName(String worldName) {
-        if (worldName == null || worldName.isEmpty()) {
-            return "未知维度";
-        }
-
-        String lowerWorldName = worldName.toLowerCase();
-        switch (lowerWorldName) {
-            case "world":
-                return "主世界";
-            case "world_nether":
-                return "下界";
-            case "world_the_end":
-                return "末地";
-            default:
-                // 尝试从名称中提取维度信息
-                if (lowerWorldName.contains("nether")) return "下界";
-                if (lowerWorldName.contains("the_end") || lowerWorldName.contains("end")) return "末地";
-                return worldName; // 返回原始名称
-        }
+    private String getDimensionName(World world) {
+        if (world == null) return "未知维度";
+        return switch (world.getEnvironment()) {
+            case NORMAL -> "主世界";
+            case NETHER -> "下界";
+            case THE_END -> "末地";
+            default -> world.getName();
+        };
     }
 
     /**
