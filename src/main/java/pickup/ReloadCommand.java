@@ -37,19 +37,20 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
      */
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
-        // 权限检查
-        if (!sender.hasPermission("pickup.admin")) {
+        // 控制台直接跳过权限检查
+        boolean isConsole = sender instanceof org.bukkit.command.ConsoleCommandSender;
+
+        // 非控制台需要权限检查
+        if (!isConsole && !sender.hasPermission("pickup.admin")) {
             sender.sendMessage("§c你没有权限使用此命令！");
             return true;
         }
 
-        // 获取命令名称并转为小写
         String commandName = command.getName().toLowerCase();
 
-        // 根据命令名称路由到不同的处理函数
         if (commandName.equals("mc")) {
             return handleMcCommand(sender, args);
-        } else if (commandName.equals("up")) {
+        } else if (commandName.equals("up") || commandName.equals("pickup")) {
             return handleUpCommand(sender, args);
         }
 
@@ -145,7 +146,7 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
 
         String commandName = command.getName().toLowerCase();
 
-        if (commandName.equals("up")) {
+        if (commandName.equals("up") || commandName.equals("pickup")) {
             return completeUpCommand(args);
         } else if (commandName.equals("mc")) {
             return completeMcCommand(args);
@@ -416,35 +417,40 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
      * 解析配置值的类型
      */
     private Object parseConfigValue(String key, String valueStr) {
-        // 尝试解析为布尔值
+        // 1. 布尔值优先
         if (valueStr.equalsIgnoreCase("true") || valueStr.equalsIgnoreCase("false")) {
             return Boolean.parseBoolean(valueStr);
         }
 
-        // 尝试解析为整数
-        try {
-            return getIntValue(key, valueStr);
-        } catch (NumberFormatException e1) {
-            // 不是整数，继续尝试小数
-        }
+        // 2. 判断是否应解析为数值（适用于 range, radius, ticks, delay 等）
+        boolean shouldBeNumber =
+                key.contains("range") ||
+                        key.contains("radius") ||
+                        key.contains("delay") ||
+                        key.contains("ticks") ||
+                        key.contains("interval") ||
+                        key.equals("pickup.range") ||
+                        key.equals("item-merge.range"); // 可根据实际配置项扩展
 
-        // 尝试解析为小数
-        try {
-            double doubleValue = Double.parseDouble(valueStr);
+        if (shouldBeNumber) {
+            try {
+                double num = Double.parseDouble(valueStr);
 
-            // 验证小数范围
-            if (key.contains("range") || key.contains("radius")) {
-                if (doubleValue < 0.1 || doubleValue > 20.0) {
-                    throw new IllegalArgumentException("拾取范围应在 0.1-20.0 之间");
+                // 范围校验（可选）
+                if ((key.contains("range") || key.contains("radius")) && (num < 0.1 || num > 20.0)) {
+                    throw new IllegalArgumentException("拾取范围应在 0.1 - 20.0 之间");
                 }
-            }
+                if ((key.contains("ticks") || key.contains("delay") || key.contains("interval")) && (num < 0 || num > 1000)) {
+                    throw new IllegalArgumentException("Tick 值应在 0 - 1000 之间");
+                }
 
-            return doubleValue;
-        } catch (NumberFormatException e2) {
-            // 不是小数
+                return num; // 返回 Double
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("\"" + valueStr + "\" 不是有效的数字");
+            }
         }
 
-        // 作为字符串返回
+        // 3. 其他情况保留为字符串
         return valueStr;
     }
 

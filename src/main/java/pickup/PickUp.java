@@ -208,7 +208,7 @@ public class PickUp extends JavaPlugin {
     private void registerCommands() {
         ReloadCommand configCommand = new ReloadCommand(this);
         Objects.requireNonNull(getCommand("pickup")).setExecutor(configCommand);
-        Objects.requireNonNull(getCommand("pickup")).setTabCompleter(configCommand);
+        Objects.requireNonNull(getCommand("mc")).setExecutor(configCommand);
     }
 
     /**
