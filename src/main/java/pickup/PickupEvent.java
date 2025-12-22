@@ -1,7 +1,7 @@
 package pickup;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
@@ -19,8 +19,6 @@ import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.Location;
 import org.jetbrains.annotations.NotNull;
-
-import java.util.logging.Level;
 
 /**
  * 拾取事件监听器类
@@ -130,6 +128,7 @@ public class PickupEvent implements Listener {
         String dimension = getDimensionName(world);
         int x = loc.getBlockX(), y = loc.getBlockY(), z = loc.getBlockZ();
 
+        // Log to console
         plugin.getLogger().info("玩家 " + player.getName() +
                 " 在 " + dimension + " (" + x + ", " + y + ", " + z + ") 死亡");
 
@@ -137,47 +136,31 @@ public class PickupEvent implements Listener {
             Component original = event.deathMessage();
             if (original == null) return;
 
-            try {
-                LegacyComponentSerializer serializer = LegacyComponentSerializer.legacySection();
-                String originalText = serializer.serialize(original);
-                String playerName = player.getName();
+            Component coordinatePart = Component.text("[")
+                    .color(NamedTextColor.DARK_GRAY)
+                    .append(Component.text(dimension).color(NamedTextColor.YELLOW))
+                    .append(Component.text(" (").color(NamedTextColor.DARK_GRAY))
+                    .append(Component.text(x + ", " + y + ", " + z).color(NamedTextColor.GOLD))
+                    .append(Component.text(")").color(NamedTextColor.DARK_GRAY))
+                    .append(Component.text("]"));
 
-                String coordinatePart = "§8[§e" + dimension + " §6(" + x + ", " + y + ", " + z + ")§8]";
-                String newMessage = buildDeathMessage(originalText, playerName, coordinatePart);
-
-                event.deathMessage(serializer.deserialize(newMessage));
-
-            } catch (Exception e) {
-                plugin.getLogger().log(Level.WARNING, "死亡消息处理失败", e);
-                // 使用原始 original 构建 fallback
-                String fallback = player.getName() + " §8[" + dimension + " §6(" + x + ", " + y + ", " + z + ")§8]§r"
-                        + LegacyComponentSerializer.legacySection().serialize(original);
-                event.deathMessage(Component.text(fallback));
-            }
+            event.deathMessage(Component.empty()
+                    .append(original)
+                    .append(Component.space())
+                    .append(coordinatePart));
         }
-    }
-
-    private static @NotNull String buildDeathMessage(String originalText, String playerName, String coordinatePart) {
-        String newMessage;
-        if (originalText.startsWith(playerName)) {
-            newMessage = playerName + coordinatePart + originalText.substring(playerName.length());
-        } else {
-            newMessage = originalText + " §8(" + coordinatePart + "§8)";
-        }
-        return newMessage + "§r"; // 总是重置颜色
     }
 
     /**
      * 将世界名称转换为友好维度名称
-     * @return 友好维度名称
      */
-    private String getDimensionName(World world) {
-        if (world == null) return "未知维度";
+    private @NotNull String getDimensionName(World world) {
+        if (world == null) return "未知维度 (unknown)";
         return switch (world.getEnvironment()) {
-            case NORMAL -> "主世界";
-            case NETHER -> "下界";
-            case THE_END -> "末地";
-            default -> world.getName();
+            case NORMAL -> "主世界 (world)";
+            case NETHER -> "下界 (nether)";
+            case THE_END -> "末地 (the_end)";
+            default -> world.getName() + " (custom)";
         };
     }
 
