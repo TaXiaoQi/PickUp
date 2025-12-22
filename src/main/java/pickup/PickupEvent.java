@@ -28,12 +28,12 @@ import java.util.logging.Level;
  * 使用@SuppressWarnings("ClassCanBeRecord")抑制警告，因为此类可以设计为record类型（Java 14+）
  * 但由于兼容性考虑，仍使用传统的类定义方式
  */
-@SuppressWarnings("ClassCanBeRecord")
 public class PickupEvent implements Listener {
 
     // 插件主类引用，用于访问配置和状态
     private final PickupManager pickupManager; // 拾取管理器，负责实际的处理逻辑
     private final PickUp plugin;               // 插件主类实例
+    private final PickupConfig config;
 
     /**
      * 构造函数
@@ -43,6 +43,7 @@ public class PickupEvent implements Listener {
     public PickupEvent(PickUp plugin, PickupManager pickupManager) {
         this.plugin = plugin;
         this.pickupManager = pickupManager;
+        this.config = plugin.getPickupConfig();
     }
 
     /**
@@ -121,7 +122,7 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerDeath(PlayerDeathEvent event) {
-        if (!plugin.isDeathLogEnabled()) return;
+        if (!config.isDeathLogEnabled()) return;
 
         Player player = event.getEntity();
         Location loc = player.getLocation();
@@ -132,7 +133,7 @@ public class PickupEvent implements Listener {
         plugin.getLogger().info("玩家 " + player.getName() +
                 " 在 " + dimension + " (" + x + ", " + y + ", " + z + ") 死亡");
 
-        if (plugin.isDeathLogSendPrivateMessage()) {
+        if (config.isDeathLogSendPrivateMessage()) {
             Component original = event.deathMessage();
             if (original == null) return;
 
@@ -209,7 +210,7 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
-        if (!plugin.isEnabled() || plugin.isPickupDisabled() || !plugin.isPlayerDriven()) {
+        if (!plugin.isEnabled() || plugin.isPickupDisabled() || !config.isPlayerDriven()) {
             return;
         }
 

@@ -429,9 +429,7 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
                         key.contains("delay") ||
                         key.contains("ticks") ||
                         key.contains("interval") ||
-                        key.equals("pickup.range") ||
-                        key.equals("item-merge.range"); // 可根据实际配置项扩展
-
+                        key.equals("pickup.range");
         if (shouldBeNumber) {
             try {
                 double num = Double.parseDouble(valueStr);
@@ -452,27 +450,6 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
 
         // 3. 其他情况保留为字符串
         return valueStr;
-    }
-
-    private static int getIntValue(String key, String valueStr) {
-        // 直接解析并返回，不使用冗余变量
-        int value = Integer.parseInt(valueStr);
-
-        // 验证整数范围
-        if (key.contains("range") || key.contains("radius")) {
-            if (value < 0 || value > 20) {
-                throw new IllegalArgumentException("范围值应在 0-20 之间");
-            }
-        }
-
-        // 验证ticks范围
-        if (key.contains("ticks") || key.contains("interval") || key.contains("delay")) {
-            if (value < 0 || value > 1000) {
-                throw new IllegalArgumentException("tick值应在 0-1000 之间");
-            }
-        }
-
-        return value;
     }
 
     /**

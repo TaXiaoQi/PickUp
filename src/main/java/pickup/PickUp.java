@@ -39,6 +39,11 @@ public class PickUp extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        // 保存所有待定的配置更改
+        if (pickupConfig != null) {
+            pickupConfig.onDisable();
+        }
+
         // 安全停止所有模块
         shutdownModules();
         getLogger().info("PickUp 插件已卸载");
@@ -215,28 +220,19 @@ public class PickUp extends JavaPlugin {
      * 检查拾取功能是否被禁用
      */
     public boolean isPickupDisabled() {
+
         return stoppedByCommand || !pickupConfig.isEnabled();
     }
-
     /**
      * 检查是否应该运行物品合并器
      */
     private boolean shouldRunItemMerger() {
+
         return !isPickupDisabled() && pickupConfig.isItemMergeEnabled();
     }
 
-    // ========== Getter 方法（供其他类访问） ==========
-    public CustomItemMerger getItemMerger() { return itemMerger; }
-    public PickupConfig getPickupConfig() { return pickupConfig; }
-    public boolean isStoppedByCommand() { return stoppedByCommand; }
-
-    // 为了保持向后兼容性，保留原有方法（委托给 PickupConfig）
-    public boolean isPlayerDriven() { return pickupConfig.isPlayerDriven(); }
-    public double getPickupRange() { return pickupConfig.getPickupRange(); }
-    public boolean isOffhandPickupEnabled() { return pickupConfig.isOffhandPickupEnabled(); }
-    public int getPlayerDrivenScanIntervalTicks() { return pickupConfig.getPlayerDrivenScanIntervalTicks(); }
-    public boolean isItemDrivenEnabled() { return pickupConfig.isItemDrivenEnabled(); }
-    public int getPickupAttemptIntervalTicks() { return pickupConfig.getPickupAttemptIntervalTicks(); }
-    public boolean isDeathLogEnabled() { return pickupConfig.isDeathLogEnabled(); }
-    public boolean isDeathLogSendPrivateMessage() { return pickupConfig.isDeathLogSendPrivateMessage(); }
+    // ========== Getter 方法 ==========
+    public boolean isStoppedByCommand() {return stoppedByCommand;}
+    public PickupConfig getPickupConfig() {return pickupConfig;}
+    public CustomItemMerger getItemMerger() {return itemMerger;}
 }

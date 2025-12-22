@@ -9,11 +9,10 @@ enabled: true
 pickup:
   # 全局拾取半径（单位：方块），有效范围：0.1 ~ 10.0
   range: 1.5
-  # 玩家丢弃冷却（单位：ticks）（防“扔了马上又捡”）
+  # 玩家丢弃冷却（单位：ticks）（防"扔了马上又捡"）
   self-immune-ticks: 5
   # 是否允许自动拾取到副手（默认false，原版行为）
   offhand-pickup: false
-  # 死亡不掉落
   # 物品拾取冷却（单位：ticks）
   delays:
     # 玩家丢弃物品拾取冷却（单位：ticks）
@@ -31,7 +30,6 @@ mode:
   player-driven: true
   # 检查频率（单位：ticks）：值越小响应越快，CPU越高
   player-scan-interval: 6
-
   # 物品主动检测拾取开关
   item-driven: true
   # 主动检测时长 （单位：ticks）

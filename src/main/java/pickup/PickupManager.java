@@ -160,7 +160,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         }
 
         // 如果物品驱动模式启用，将物品添加到活跃物品列表
-        if (plugin.isItemDrivenEnabled()) {
+        if (config.isItemDrivenEnabled()) {
             addToActiveItems(item);
         }
 
@@ -183,7 +183,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         markItemAsPlayerDrop(item, player.getUniqueId());
 
         // 如果物品驱动模式启用，将物品添加到活跃物品列表
-        if (plugin.isItemDrivenEnabled()) {
+        if (config.isItemDrivenEnabled()) {
             addToActiveItems(item);
         }
 
@@ -204,7 +204,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             markItemAsNaturalDrop(item);
 
             // 如果物品驱动模式启用，将物品添加到活跃物品列表
-            if (plugin.isItemDrivenEnabled()) {
+            if (config.isItemDrivenEnabled()) {
                 addToActiveItems(item);
             }
 
@@ -696,7 +696,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
                     // 保留原物品的其他元数据（名称、附魔等）
                     if (offhand.hasItemMeta()) {
                         ItemMeta meta = offhand.getItemMeta().clone();
-                        // 手动清理PDC标签
+                        // 手动清理pdc标签
                         meta.getPersistentDataContainer().remove(SOURCE_KEY);
                         meta.getPersistentDataContainer().remove(SPAWN_TICK_KEY);
                         meta.getPersistentDataContainer().remove(DROPPED_BY_KEY);
@@ -781,7 +781,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             ItemStack offhand = inv.getItemInOffHand();
 
             // 只有当配置允许时，才放置到空的副手
-            if (offhand.getType() == Material.AIR && plugin.isOffhandPickupEnabled()) {
+            if (offhand.getType() == Material.AIR && config.isOffhandPickupEnabled()) {
                 int toPlace = Math.min(remainingAmount, cleanStack.getType().getMaxStackSize());
                 ItemStack newStack = cleanStack.clone(); // ✅ 使用干净的副本
                 newStack.setAmount(toPlace);
@@ -822,10 +822,10 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         active = true;
 
         // 根据配置启动相应的驱动模式
-        if (plugin.isPlayerDriven()) {
+        if (config.isPlayerDriven()) {
             startPlayerDriven(); // 启动玩家驱动模式
         }
-        if (plugin.isItemDrivenEnabled()) {
+        if (config.isItemDrivenEnabled()) {
             startItemDriven(); // 启动物品驱动模式
         }
     }
@@ -883,7 +883,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
      * 定期更新活跃玩家列表（用于移动事件触发）
      */
     private void startPlayerDriven() {
-        int interval = plugin.getPlayerDrivenScanIntervalTicks();
+        int interval = config.getPlayerDrivenScanIntervalTicks();
         activePlayerUpdater = new BukkitRunnable() {
             @Override
             public void run() {
@@ -904,7 +904,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
      * 定期扫描活跃物品并尝试可被拾取生物拾取
      */
     private void startItemDriven() {
-        int checkInterval = plugin.getPickupAttemptIntervalTicks();
+        int checkInterval = config.getPickupAttemptIntervalTicks();
         itemDetectionTask = new BukkitRunnable() {
             @Override
             public void run() {
@@ -942,7 +942,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
                         // === 支持玩家和可拾取生物 ===
                         World world = item.getWorld();
                         Location loc = item.getLocation();
-                        double range = plugin.getPickupRange();
+                        double range = config.getPickupRange();
                         double rangeSq = range * range;
 
                         LivingEntity nearestPicker = null;
@@ -959,7 +959,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
                                 continue;
                             }
 
-                            // 使用通用的canPickupNow方法检查延迟
+                            // 使用通用的canpickupnow方法检查延迟
                             if (canPickupNow(picker, item)) {  // 这里应该传递picker，而不是item
                                 nearestPicker = picker;
                                 nearestDistSq = distSq;
@@ -1072,7 +1072,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     /**
      * 解析字符串为物品来源类型
      * @param str 来源字符串
-     * @return 对应的ItemSourceType枚举值
+     * @return 对应的itemsourcetype枚举值
      */
     private ItemSourceType parseSource(String str) {
         if (str == null) return ItemSourceType.UNKNOWN;
@@ -1118,7 +1118,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         // 加载对应版本的CraftItem类
         Class<?> craftItemClass = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftItem");
 
-        // 获取getHandle方法
+        // 获取gethandle方法
         cachedGetHandleMethod = craftItemClass.getMethod("getHandle");
         cachedGetHandleMethod.setAccessible(true); // 设置可访问
         return cachedGetHandleMethod;
