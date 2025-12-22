@@ -110,42 +110,57 @@ enabled: true
 #       拾取行为设置
 # ========================
 pickup:
-  # 全局拾取半径（方块），有效范围：0.1 ~ 10.0
+  # 全局拾取半径（单位：方块），有效范围：0.1 ~ 10.0
   range: 1.5
-  # 玩家丢出的物品在此 ticks 内不能被自己拾取（防“扔了马上又捡”）
+  # 玩家丢弃冷却（单位：ticks）（防"扔了马上又捡"）
   self-immune-ticks: 5
+  # 是否允许自动拾取到副手（默认false，原版行为）
+  offhand-pickup: false
   # 物品拾取冷却（单位：ticks）
   delays:
-    player-drop: 20      # 玩家手动丢弃
-    natural-drop: 10     # 怪物死亡、方块破坏等自然掉落
-    instant-pickup: 0    # 投掷器、命令 /give、红石生成
+    # 玩家丢弃物品拾取冷却（单位：ticks）
+    player-drop: 15
+    # 实体掉落物品拾取冷却（单位：ticks）
+    natural-drop: 10
+    # 其他类型物品拾取冷却（单位：ticks）
+    instant-pickup: 0
 
 # ========================
-# 驱动模式（决定拾取如何触发）
+# 拾取模式（决定拾取如何触发）
 # ========================
 mode:
-  # 启用“玩家移动触发拾取”
+  # 玩家移动拾取开关
   player-driven: true
-  # 检查频率（ticks）：值越小响应越快，CPU越高
+  # 检查频率（单位：ticks）：值越小响应越快，CPU越高
   player-scan-interval: 6
-
-  # 启用“物品主动寻找玩家”
+  # 物品主动检测拾取开关
   item-driven: true
-  # 物品生成后最多活跃多少 ticks
+  # 主动检测时长 （单位：ticks）
   item-active-duration: 60
-  # 拾取尝试频率（ticks）
+  # 拾取检查频率（单位：ticks）
   item-check-interval: 2
 
 # ========================
-#     物品合并设置
+#     掉落物合并设置
 # ========================
 custom-item-merge:
-  # 是否启用物品合并（减少实体数量）
+  # 掉落物合并开关（减少实体数量）
   enabled: true
-  # 合并检测半径（方块）
+  # 合并检测半径（单位：方块）
   range: 1.0
-  # 合并任务执行间隔（ticks），值越小合并越及时，CPU 开销略增
-  interval-ticks: 10
+  # 合并检测时长（单位：ticks）
+  active-duration-ticks: 10
+  # 合并检查频率（单位：ticks）：值越小响应越快，CPU越高
+  scan-interval-ticks: 2
+
+# ========================
+# 死亡日志设置(播报死亡坐标)
+# ========================
+death-log:
+  # 启用死亡日志（在后台日志输出死亡坐标）
+  enabled: true
+  # 启用死亡坐标播报（替换原版死亡播报）
+  send-private-message: true
 ```
 ---
 ## 🚀 快速开始
