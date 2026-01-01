@@ -19,6 +19,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 拾取管理器 - 核心逻辑处理类
@@ -47,8 +48,10 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     private static final NamespacedKey SOURCE_KEY = new NamespacedKey("pickup", "source");
 
     // 玩家驱动模式相关
+    private final Map<World, AtomicInteger> worldPickupableItemCount = new ConcurrentHashMap<>(); // 计数器
     private final Set<UUID> activePlayers = ConcurrentHashMap.newKeySet(); // 活跃玩家集合（线程安全）
     private BukkitRunnable activePlayerUpdater = null; // 玩家更新定时任务
+
 
     // 物品驱动模式相关
     private final Map<World, Set<Item>> activeItemsByWorld = new ConcurrentHashMap<>(); // 按世界分组的活跃物品
@@ -169,6 +172,9 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
 
         // 通知物品合并器有新物品可合并
         notifyMerger(item);
+
+        // 物品生成，增加计数
+        incrementPickupableItemCount(item.getWorld());
     }
 
     /**
@@ -334,6 +340,41 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         if (merger != null) {
             merger.notifyItemReady(item);
         }
+    }
+
+    /**
+     * 增加指定世界中可拾取物品的计数。
+     * 通常在物品生成或合并后调用。
+     * @param world 物品所在的世界
+     */
+    public void incrementPickupableItemCount(World world) {
+        worldPickupableItemCount.computeIfAbsent(world, w -> new AtomicInteger(0)).incrementAndGet();
+    }
+
+    /**
+     * 减少指定世界中可拾取物品的计数。
+     * 通常在物品被拾取、消失或合并前调用。
+     * @param world 物品所在的世界
+     */
+    public void decrementPickupableItemCount(World world) {
+        AtomicInteger count = worldPickupableItemCount.get(world);
+        if (count != null) {
+            int remaining = count.decrementAndGet();
+            // 如果计数变为0或负数，可以安全地移除该世界的条目以节省内存
+            if (remaining <= 0) {
+                worldPickupableItemCount.remove(world);
+            }
+        }
+    }
+
+    /**
+     * 检查指定世界中是否存在可拾取的物品。
+     * @param world 要检查的世界
+     * @return 如果存在则返回true，否则false
+     */
+    public boolean hasPickupableItems(World world) {
+        AtomicInteger count = worldPickupableItemCount.get(world);
+        return count != null && count.get() > 0;
     }
 
     /**
@@ -592,6 +633,8 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         if (pickedUp) {
             world.spawnParticle(Particle.ITEM, loc, 3, 0.1, 0.1, 0.1, 0.0,
                     new ItemStack(stack.getType(), 1));
+            // 物品被生物拾取，减少计数
+            decrementPickupableItemCount(item.getWorld());
             item.remove();
         }
     }
@@ -707,6 +750,11 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
                     anyPickedUp = true;
                 }
             }
+        } else {
+            // 物品被完全拾取，减少计数
+            decrementPickupableItemCount(item.getWorld());
+            // 全部拾取完成，移除物品实体
+            item.remove();
         }
 
         // 2. 检查光标（手持物品）
@@ -883,20 +931,9 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
      * 定期更新活跃玩家列表（用于移动事件触发）
      */
     private void startPlayerDriven() {
-        int interval = config.getPlayerDrivenScanIntervalTicks();
-        activePlayerUpdater = new BukkitRunnable() {
-            @Override
-            public void run() {
-                // 将所有非旁观者玩家添加到活跃列表
-                for (Player player : Bukkit.getOnlinePlayers()) {
-                    if (player.getGameMode() != GameMode.SPECTATOR) {
-                        activePlayers.add(player.getUniqueId());
-                    }
-                }
-            }
-        };
-        // 立即执行，然后按配置间隔定期执行
-        activePlayerUpdater.runTaskTimer(plugin, 0, interval);
+        // 不需要定时任务了，现在由 PlayerMoveEvent 按频率触发
+        plugin.getLogger().info("玩家驱动模式已启用，移动检测间隔: " +
+                config.getPlayerMoveCheckIntervalTicks() + " ticks");
     }
 
     /**
@@ -1006,7 +1043,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     /**
      * 获取ItemEntity类的pickupDelay字段（反射）
      * 支持多个Minecraft版本
-     * @return pickupDelay字段对象
+     * @return pickupdelay字段对象
      */
     private static Field getItemPickupDelayField() {
         // 如果已缓存，直接返回
@@ -1103,7 +1140,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
 
     /**
      * 获取CraftItem.getHandle()方法（反射）
-     * @return getHandle方法对象
+     * @return gethandle方法对象
      * @throws Exception 反射相关异常
      */
     private static Method getGetHandleMethod() throws Exception {
@@ -1115,7 +1152,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         // 获取服务器版本字符串（如"v1_20_R4"）
         String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
 
-        // 加载对应版本的CraftItem类
+        // 加载对应版本的craftitem类
         Class<?> craftItemClass = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftItem");
 
         // 获取gethandle方法

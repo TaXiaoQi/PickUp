@@ -28,8 +28,11 @@ pickup:
 mode:
   # 玩家移动拾取开关
   player-driven: true
+  # 玩家移动时，只有移动超过此距离（方块）才会触发拾取检测，建议 0.1 ~ 0.5
+  player-min-move-distance: 0.25
   # 检查频率（单位：ticks）：值越小响应越快，CPU越高
-  player-scan-interval: 6
+  player-move-check-interval: 6
+
   # 物品主动检测拾取开关
   item-driven: true
   # 主动检测时长 （单位：ticks）

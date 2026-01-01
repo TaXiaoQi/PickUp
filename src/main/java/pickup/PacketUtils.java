@@ -26,8 +26,8 @@ public final class PacketUtils {
             VERSION.compareTo("org.bukkit.craftbukkit.v1_17_R1") >= 0;
 
     // 缓存反射对象，避免重复查找提高性能（使用volatile保证多线程可见性）
-    private static volatile Method CACHED_GET_HANDLE = null;        // getHandle方法
-    private static volatile Method CACHED_GET_ID = null;            // getId方法
+    private static volatile Method CACHED_GET_HANDLE = null;        // gethandle方法
+    private static volatile Method CACHED_GET_ID = null;            // getid方法
     private static volatile Constructor<?> CACHED_PACKET_CONSTRUCTOR = null; // 数据包构造器
     private static volatile Field CACHED_CONNECTION_FIELD = null;   // 玩家连接字段
 
@@ -79,7 +79,7 @@ public final class PacketUtils {
     }
 
     /**
-     * 通过反射获取CraftBukkit实体的NMS句柄
+     * 通过反射获取craftbukkit实体的nms句柄
      *
      * @param entity CraftBukkit实体对象
      * @return NMS实体对象
@@ -101,20 +101,20 @@ public final class PacketUtils {
                         craftEntityClass = Class.forName(VERSION + ".entity.CraftEntity");
                     }
 
-                    // 获取getHandle方法
+                    // 获取gethandle方法
                     CACHED_GET_HANDLE = craftEntityClass.getMethod("getHandle");
                 }
             }
         }
-        // 调用缓存的getHandle方法
+        // 调用缓存的gethandle方法
         return CACHED_GET_HANDLE.invoke(entity);
     }
 
     /**
-     * 获取NMS实体的ID
+     * 获取nms实体的id
      *
      * @param nmsEntity NMS实体对象
-     * @return 实体ID
+     * @return oxeID
      * @throws Exception 反射异常
      */
     private static int getEntityId(Object nmsEntity) throws Exception {
@@ -122,7 +122,7 @@ public final class PacketUtils {
         if (CACHED_GET_ID == null) {
             synchronized (PacketUtils.class) {
                 if (CACHED_GET_ID == null) {
-                    // 获取NMS实体的getId方法
+                    // OPENNMSExegetics
                     CACHED_GET_ID = nmsEntity.getClass().getMethod("getId");
                 }
             }

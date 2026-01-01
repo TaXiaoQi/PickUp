@@ -45,7 +45,6 @@ public class PickupConfig {
     private double pickupRange;
     private boolean offhandPickupEnabled;
     private int selfImmuneTicks;
-    private int playerDrivenScanIntervalTicks;
     private boolean itemDrivenEnabled;
     private int activeDetectionTicks;
     private int pickupAttemptIntervalTicks;
@@ -58,6 +57,8 @@ public class PickupConfig {
     private boolean itemMergeEnabled;
     private int itemMergeActiveDurationTicks;
     private int itemMergeScanIntervalTicks;
+    private double playerMinMoveDistance;
+    private int playerMoveCheckIntervalTicks;
 
     /**
      * 构造函数
@@ -88,7 +89,7 @@ public class PickupConfig {
         // 模式配置
         this.enabled = config.getBoolean("enabled", true);
         this.playerDriven = config.getBoolean("mode.player-driven", true);
-        this.playerDrivenScanIntervalTicks = Math.max(1, config.getInt("mode.player-scan-interval", 6));
+        this.playerMoveCheckIntervalTicks = Math.max(1, config.getInt("mode.player-move-check-interval", 6));
         this.itemDrivenEnabled = config.getBoolean("mode.item-driven", true);
         this.activeDetectionTicks = Math.max(0, config.getInt("mode.item-active-duration", 60));
         this.pickupAttemptIntervalTicks = Math.max(1, config.getInt("mode.item-check-interval", 2));
@@ -97,6 +98,7 @@ public class PickupConfig {
         this.pickupRange = Math.max(0.1, Math.min(20.0, config.getDouble("pickup.range", 1.5)));
         this.selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 5));
         this.offhandPickupEnabled = config.getBoolean("pickup.offhand-pickup", false);
+        this.playerMinMoveDistance = Math.max(0.0, config.getDouble("mode.player-min-move-distance", 0.25));
 
         // 延迟配置
         this.playerDropDelayTicks = Math.max(0, config.getInt("pickup.delays.player-drop", 15));
@@ -258,7 +260,9 @@ public class PickupConfig {
                 "custom-item-merge.scan-interval-ticks",
 
                 "death-log.enabled",
-                "death-log.send-private-message"
+                "death-log.send-private-message",
+
+                "mode.player-min-move-distance"
         );
     }
 
@@ -295,9 +299,6 @@ public class PickupConfig {
                 case "mode.player-driven":
                     this.playerDriven = getBooleanValue(value);
                     break;
-                case "mode.player-scan-interval":
-                    this.playerDrivenScanIntervalTicks = getIntValue(value);
-                    break;
                 case "mode.item-driven":
                     this.itemDrivenEnabled = getBooleanValue(value);
                     break;
@@ -309,9 +310,6 @@ public class PickupConfig {
                     break;
                 case "pickup.range":
                     this.pickupRange = getDoubleValue(value);
-                    break;
-                case "pickup.self-immune-ticks":
-                    this.selfImmuneTicks = getIntValue(value);
                     break;
                 case "pickup.offhand-pickup":
                     this.offhandPickupEnabled = getBooleanValue(value);
@@ -342,6 +340,12 @@ public class PickupConfig {
                     break;
                 case "custom-item-merge.scan-interval-ticks":
                     this.itemMergeScanIntervalTicks = getIntValue(value);
+                    break;
+                case "mode.player-min-move-distance":
+                    this.playerMinMoveDistance = getDoubleValue(value);
+                    break;
+                case "mode.player-move-check-interval":
+                    this.playerMoveCheckIntervalTicks = getIntValue(value);
                     break;
             }
         } catch (Exception e) {
@@ -409,7 +413,6 @@ public class PickupConfig {
     public double getPickupRange() { return pickupRange; }
     public boolean isOffhandPickupEnabled() { return offhandPickupEnabled; }
     public int getSelfImmuneTicks() { return selfImmuneTicks; }
-    public int getPlayerDrivenScanIntervalTicks() { return playerDrivenScanIntervalTicks; }
     public boolean isItemDrivenEnabled() { return itemDrivenEnabled; }
     public int getActiveDetectionTicks() { return activeDetectionTicks; }
     public int getPickupAttemptIntervalTicks() { return pickupAttemptIntervalTicks; }
@@ -422,4 +425,6 @@ public class PickupConfig {
     public boolean isItemMergeEnabled() { return itemMergeEnabled; }
     public int getItemMergeActiveDurationTicks() { return itemMergeActiveDurationTicks; }
     public int getItemMergeScanIntervalTicks() { return itemMergeScanIntervalTicks; }
+    public double getPlayerMinMoveDistance() {return playerMinMoveDistance;}
+    public int getPlayerMoveCheckIntervalTicks() { return playerMoveCheckIntervalTicks; }
 }

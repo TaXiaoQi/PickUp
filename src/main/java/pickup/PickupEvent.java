@@ -20,6 +20,10 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.Location;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * 拾取事件监听器类
  * 负责监听和处理与物品拾取相关的各种事件
@@ -27,7 +31,7 @@ import org.jetbrains.annotations.NotNull;
  * 但由于兼容性考虑，仍使用传统的类定义方式
  */
 public class PickupEvent implements Listener {
-
+    private final Map<UUID, Integer> moveCounters = new ConcurrentHashMap<>();
     // 插件主类引用，用于访问配置和状态
     private final PickupManager pickupManager; // 拾取管理器，负责实际的处理逻辑
     private final PickUp plugin;               // 插件主类实例
@@ -57,9 +61,12 @@ public class PickupEvent implements Listener {
             return;
         }
 
+
         // 委托给拾取管理器处理具体的生成逻辑
         pickupManager.handleItemSpawn(event);
     }
+
+
 
     /**
      * 处理玩家丢弃物品事件
@@ -202,11 +209,35 @@ public class PickupEvent implements Listener {
             return;
         }
 
-        if (event.getFrom().getBlockX() != event.getTo().getBlockX() ||
-                event.getFrom().getBlockY() != event.getTo().getBlockY() ||
-                event.getFrom().getBlockZ() != event.getTo().getBlockZ()) {
+        // 如果当前世界没有可拾取的物品，直接跳过后续所有逻辑
+        if (!pickupManager.hasPickupableItems(player.getWorld())) {
+            return;
+        }
+
+        // ====== 读取配置中的最小移动距离，并计算其平方 ======
+        double minMoveDistance = config.getPlayerMinMoveDistance();
+        double minMoveDistanceSq = minMoveDistance * minMoveDistance;
+
+        if (event.getFrom().distanceSquared(event.getTo()) > minMoveDistanceSq) {
             pickupManager.tryPickup(player);
         }
+
+        // 按配置频率检测
+        UUID playerId = player.getUniqueId();
+        int interval = config.getPlayerMoveCheckIntervalTicks(); // 读取配置
+
+        // 简单计数器实现：每N次移动检测1次
+        int count = moveCounters.getOrDefault(playerId, 0) + 1;
+
+        if (count < interval) {
+            moveCounters.put(playerId, count);
+            return; // 未达到检测间隔，跳过
+        }
+
+        // 达到检测间隔，执行拾取并重置计数器
+        moveCounters.put(playerId, 0);
+        pickupManager.tryPickup(player);
+
     }
 
     /**
@@ -227,8 +258,22 @@ public class PickupEvent implements Listener {
                     event.getItem().getItemStack().getType());
         }
 
-        // 🔒 取消原版拾取（因为我们插件接管拾取）
+        // 取消原版拾取
         event.setCancelled(true);
+    }
+
+    /** * 处理物品自然消失事件 * 当物品因超时而从世界中移除时触发 */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onItemDespawn(org.bukkit.event.entity.ItemDespawnEvent event) {
+        // 只有当插件启用且物品是由我们管理的，才需要更新计数
+        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
+            return;
+        }
+        Item item = event.getEntity();
+        // 检查此物品是否带有我们的标记，避免影响原版或其他插件的物品
+        if (pickupManager.hasPickupMark(item.getItemStack())) {
+            pickupManager.decrementPickupableItemCount(item.getWorld());
+        }
     }
 
     /// 事件优先级说明：

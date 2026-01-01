@@ -235,4 +235,5 @@ public class PickUp extends JavaPlugin {
     public boolean isStoppedByCommand() {return stoppedByCommand;}
     public PickupConfig getPickupConfig() {return pickupConfig;}
     public CustomItemMerger getItemMerger() {return itemMerger;}
+    public PickupManager getPickupManager() {return this.pickupManager;}
 }

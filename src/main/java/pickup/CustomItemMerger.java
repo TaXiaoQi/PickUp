@@ -251,6 +251,14 @@ public class CustomItemMerger {
 
         // 删除被合并的物品实体
         remove.remove();
+
+        // 注意：这里需要能访问到 PickupManager。一种方式是将 plugin 强转为 PickUp 类型
+        if (plugin instanceof pickup.PickUp pickUpPlugin) {
+            pickup.PickupManager manager = pickUpPlugin.getPickupManager();
+            if (manager != null) {
+                manager.decrementPickupableItemCount(remove.getWorld());
+            }
+        }
     }
 
     /**
