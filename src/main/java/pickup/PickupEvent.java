@@ -14,6 +14,7 @@ import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -192,6 +193,7 @@ public class PickupEvent implements Listener {
             ItemStack clean = pickupManager.createCleanStack(original);
             item.setItemStack(clean);
         }
+        plugin.getItemSpatialIndex().unregisterItem(item);
     }
 
     /**
@@ -274,6 +276,12 @@ public class PickupEvent implements Listener {
         Item item = event.getEntity();
         // 1. 从空间索引中移除（重要！）
         plugin.getItemSpatialIndex().unregisterItem(item);
+    }
+
+    // 玩家离线事件
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        lastCheckTicks.remove(event.getPlayer().getUniqueId());
     }
 
     /// 事件优先级说明：

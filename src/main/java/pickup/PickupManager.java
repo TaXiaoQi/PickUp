@@ -1102,15 +1102,11 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             return cachedGetHandleMethod;
         }
 
-        // 获取服务器版本字符串（如"v1_20_R4"）
         String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
+        Class<?> craftEntityClass = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftEntity");
 
-        // 加载对应版本的craftitem类
-        Class<?> craftItemClass = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftItem");
-
-        // 获取gethandle方法
-        cachedGetHandleMethod = craftItemClass.getMethod("getHandle");
-        cachedGetHandleMethod.setAccessible(true); // 设置可访问
+        cachedGetHandleMethod = craftEntityClass.getMethod("getHandle");
+        cachedGetHandleMethod.setAccessible(true);
         return cachedGetHandleMethod;
     }
 
