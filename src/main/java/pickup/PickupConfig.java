@@ -262,6 +262,7 @@ public class PickupConfig {
                 "death-log.enabled",
                 "death-log.send-private-message",
 
+                "mode.player-move-check-interval",
                 "mode.player-min-move-distance"
         );
     }

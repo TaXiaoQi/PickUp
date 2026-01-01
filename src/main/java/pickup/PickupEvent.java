@@ -31,7 +31,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 但由于兼容性考虑，仍使用传统的类定义方式
  */
 public class PickupEvent implements Listener {
-    private final Map<UUID, Integer> moveCounters = new ConcurrentHashMap<>();
+    // 记录每个玩家上次检测的时间（tick）
+    private final Map<UUID, Long> lastCheckTicks = new ConcurrentHashMap<>();
     // 插件主类引用，用于访问配置和状态
     private final PickupManager pickupManager; // 拾取管理器，负责实际的处理逻辑
     private final PickUp plugin;               // 插件主类实例
@@ -214,7 +215,7 @@ public class PickupEvent implements Listener {
             return;
         }
 
-        // ====== 读取配置中的最小移动距离，并计算其平方 ======
+        // ====== 移动距离检查 ======
         double minMoveDistance = config.getPlayerMinMoveDistance();
         double minMoveDistanceSq = minMoveDistance * minMoveDistance;
 
@@ -222,22 +223,22 @@ public class PickupEvent implements Listener {
             pickupManager.tryPickup(player);
         }
 
-        // 按配置频率检测
+        // ====== 新增：时间间隔控制 ======
         UUID playerId = player.getUniqueId();
-        int interval = config.getPlayerMoveCheckIntervalTicks(); // 读取配置
+        long currentTick = player.getWorld().getFullTime(); // 获取世界当前tick
+        long lastCheck = lastCheckTicks.getOrDefault(playerId, 0L);
+        int checkInterval = config.getPlayerMoveCheckIntervalTicks(); // 读取配置
 
-        // 简单计数器实现：每N次移动检测1次
-        int count = moveCounters.getOrDefault(playerId, 0) + 1;
-
-        if (count < interval) {
-            moveCounters.put(playerId, count);
-            return; // 未达到检测间隔，跳过
+        // 检查是否达到时间间隔
+        if ((currentTick - lastCheck) < checkInterval) {
+            return; // 时间未到，跳过本次检测
         }
 
-        // 达到检测间隔，执行拾取并重置计数器
-        moveCounters.put(playerId, 0);
-        pickupManager.tryPickup(player);
+        // 记录本次检测时间
+        lastCheckTicks.put(playerId, currentTick);
 
+        // 执行拾取检测
+        pickupManager.tryPickup(player);
     }
 
     /**
