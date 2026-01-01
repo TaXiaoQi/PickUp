@@ -15,8 +15,8 @@ public class PickUp extends JavaPlugin {
     private PickupManager pickupManager;
     private CustomItemMerger itemMerger;
     private PickupConfig pickupConfig;
-    private PickupEvent pickupEventListener;
-
+    private PickupEvent pickupEventListener; // 新增：空间索引
+    public ItemSpatialIndex itemSpatialIndex;
     // 控制标志
     private boolean stoppedByCommand = false;
 
@@ -70,10 +70,13 @@ public class PickUp extends JavaPlugin {
         // 1. 先创建配置管理器
         this.pickupConfig = new PickupConfig(this);
 
-        // 2. 创建拾取管理器
-        this.pickupManager = new PickupManager(this, pickupConfig);
+        // 2. 创建空间索引（必须先创建）
+        this.itemSpatialIndex = new ItemSpatialIndex(this);
 
-        // 创建物品合并器
+        // 3. 创建拾取管理器（传入空间索引）
+        this.pickupManager = new PickupManager(this, pickupConfig, itemSpatialIndex);
+
+        // 4. 创建物品合并器
         if (pickupConfig.isItemMergeEnabled()) {
             this.itemMerger = new CustomItemMerger(this,
                     pickupConfig.getItemMergeRange(),
@@ -81,10 +84,10 @@ public class PickUp extends JavaPlugin {
                     pickupConfig.getItemMergeScanIntervalTicks());
         }
 
-        // 注册事件监听器
+        // 5. 注册事件监听器
         registerEventListener();
 
-        // 启动功能（如果未禁用）
+        // 6. 启动功能（如果未禁用）
         if (!isPickupDisabled()) {
             enableModules();
         }
@@ -122,6 +125,9 @@ public class PickUp extends JavaPlugin {
         if (itemMerger != null && shouldRunItemMerger()) {
             itemMerger.start();
         }
+        if (itemSpatialIndex != null) {
+            itemSpatialIndex.startCleanupTask(); // 启动清理任务
+        }
     }
 
     /**
@@ -134,6 +140,7 @@ public class PickUp extends JavaPlugin {
         if (itemMerger != null) {
             itemMerger.stop();
         }
+        // itemSpatialIndex 不需要停止，它会自动被垃圾回收
     }
 
     /**
@@ -148,6 +155,7 @@ public class PickUp extends JavaPlugin {
         this.itemMerger = null;
         this.pickupEventListener = null;
         this.pickupConfig = null;
+        this.itemSpatialIndex = null;
     }
 
     /**
@@ -165,8 +173,11 @@ public class PickUp extends JavaPlugin {
             this.pickupConfig = new PickupConfig(this);
         }
 
+        // 重新创建空间索引
+        this.itemSpatialIndex = new ItemSpatialIndex(this);
+
         // 重新初始化拾取管理器
-        this.pickupManager = new PickupManager(this, pickupConfig);
+        this.pickupManager = new PickupManager(this, pickupConfig, itemSpatialIndex);
 
         // 重新初始化物品合并器
         if (pickupConfig.isItemMergeEnabled()) {
@@ -220,14 +231,13 @@ public class PickUp extends JavaPlugin {
      * 检查拾取功能是否被禁用
      */
     public boolean isPickupDisabled() {
-
         return stoppedByCommand || !pickupConfig.isEnabled();
     }
+
     /**
      * 检查是否应该运行物品合并器
      */
     private boolean shouldRunItemMerger() {
-
         return !isPickupDisabled() && pickupConfig.isItemMergeEnabled();
     }
 
@@ -236,4 +246,5 @@ public class PickUp extends JavaPlugin {
     public PickupConfig getPickupConfig() {return pickupConfig;}
     public CustomItemMerger getItemMerger() {return itemMerger;}
     public PickupManager getPickupManager() {return this.pickupManager;}
+    public ItemSpatialIndex getItemSpatialIndex() {return this.itemSpatialIndex;}
 }

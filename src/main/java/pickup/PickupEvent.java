@@ -61,9 +61,10 @@ public class PickupEvent implements Listener {
         if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
             return;
         }
+        // 1. 通知空间索引注册物品
+        plugin.getItemSpatialIndex().registerItem(event.getEntity());
 
-
-        // 委托给拾取管理器处理具体的生成逻辑
+        // 2. 处理拾取逻辑
         pickupManager.handleItemSpawn(event);
     }
 
@@ -271,10 +272,8 @@ public class PickupEvent implements Listener {
             return;
         }
         Item item = event.getEntity();
-        // 检查此物品是否带有我们的标记，避免影响原版或其他插件的物品
-        if (pickupManager.hasPickupMark(item.getItemStack())) {
-            pickupManager.decrementPickupableItemCount(item.getWorld());
-        }
+        // 1. 从空间索引中移除（重要！）
+        plugin.getItemSpatialIndex().unregisterItem(item);
     }
 
     /// 事件优先级说明：

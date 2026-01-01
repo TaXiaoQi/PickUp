@@ -186,9 +186,14 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
      */
     private List<String> completeSetCommand(String[] args) {
         if (args.length == 2) {
-            // 配置路径补全
-            List<String> paths = config.getConfigKeys();
-            return filterCompletions(paths, args[1]);
+            List<String> suggestions = new ArrayList<>();
+            for (String key : config.getConfigKeys()) {
+                // 根据已输入的部分进行过滤
+                if (key.toLowerCase().contains(args[1].toLowerCase())) {
+                    suggestions.add(key);
+                }
+            }
+            return suggestions;
         }
 
         if (args.length == 3) {

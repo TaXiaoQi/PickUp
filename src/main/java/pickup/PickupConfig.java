@@ -240,31 +240,7 @@ public class PickupConfig {
      * 获取所有配置键
      */
     public List<String> getConfigKeys() {
-        return Arrays.asList(
-                "pickup.range",
-                "pickup.self-immune-ticks",
-                "pickup.offhand-pickup",
-                "pickup.delays.player-drop",
-                "pickup.delays.natural-drop",
-                "pickup.delays.instant-pickup",
-
-                "mode.player-driven",
-                "mode.player-scan-interval",
-                "mode.item-driven",
-                "mode.item-active-duration",
-                "mode.item-check-interval",
-
-                "custom-item-merge.enabled",
-                "custom-item-merge.range",
-                "custom-item-merge.active-duration-ticks",
-                "custom-item-merge.scan-interval-ticks",
-
-                "death-log.enabled",
-                "death-log.send-private-message",
-
-                "mode.player-move-check-interval",
-                "mode.player-min-move-distance"
-        );
+        return new ArrayList<>(config.getKeys(true));
     }
 
     /**

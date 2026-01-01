@@ -14,12 +14,16 @@ import java.lang.reflect.Method;
  * 使用反射处理不同Minecraft版本的API差异
  */
 public final class PacketUtils {
-
     // 获取服务器版本字符串（例如："org.bukkit.craftbukkit.v1_20_R4"）
     private static final String VERSION = Bukkit.getServer().getClass().getPackage().getName();
 
     // 版本检测标志：是否为1.20.5+的新版CraftBukkit（包路径不同）
-    private static final boolean IS_NEW_CRAFTBUKKIT = !VERSION.contains("v1_");
+    private static final boolean IS_NEW_CRAFTBUKKIT = VERSION.contains("org.bukkit.craftbukkit")
+            && !VERSION.contains("v1_16")
+            && !VERSION.contains("v1_17")
+            && !VERSION.contains("v1_18")
+            && !VERSION.contains("v1_19")
+            && !VERSION.contains("v1_20");
 
     // 版本检测标志：是否为1.17+版本（数据包类名和字段名有变化）
     private static final boolean IS_1_17_PLUS = IS_NEW_CRAFTBUKKIT ||
@@ -55,13 +59,13 @@ public final class PacketUtils {
             Object nmsItem = getHandle(collectedItem);
             if (nmsItem == null) return;
 
-            // 获取被拾取实体的ID
+            // 获取被拾取实体的id
             int collectedId = getEntityId(nmsItem);
 
             // 创建拾取动画数据包
             Object packet = createCollectPacket(collectedId, collectorEntityId, amount);
 
-            // 获取观看者的NMS对象
+            // 获取观看者的nms对象
             Object nmsViewer = getHandle(viewer);
             if (nmsViewer == null) return;
 
@@ -127,15 +131,15 @@ public final class PacketUtils {
                 }
             }
         }
-        // 调用缓存的getId方法
+        // 调用缓存的getid方法
         return (int) CACHED_GET_ID.invoke(nmsEntity);
     }
 
     /**
      * 创建拾取动画数据包
      *
-     * @param collectedId 被拾取实体的ID
-     * @param collectorId 拾取者实体的ID
+     * @param collectedId 被拾取实体的id
+     * @param collectorId 拾取者实体的id
      * @param count 拾取数量
      * @return 数据包对象
      * @throws Exception 反射异常
@@ -168,7 +172,7 @@ public final class PacketUtils {
     /**
      * 获取玩家的网络连接对象（PlayerConnection）
      *
-     * @param nmsPlayer NMS玩家对象
+     * @param nmsPlayer NOMSox
      * @return 网络连接对象
      * @throws Exception 反射异常
      */
@@ -251,7 +255,7 @@ public final class PacketUtils {
         }
 
         try {
-            // 获取拾取者的NMS对象和实体ID
+            // 获取拾取者的nms对象和实体id
             Object nmsCollector = getHandle(collector);
             int collectorId = getEntityId(nmsCollector);
 
