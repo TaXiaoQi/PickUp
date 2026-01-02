@@ -1,7 +1,8 @@
-package pickup;
+package pickup.event;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
@@ -10,16 +11,18 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.event.entity.EntityPickupItemEvent;
-import org.bukkit.event.entity.PlayerDeathEvent;
-import org.bukkit.Location;
 import org.jetbrains.annotations.NotNull;
+import pickup.Main;
+import pickup.config.PickupConfig;
+import pickup.feature.PickupManager;
 
 import java.util.Map;
 import java.util.UUID;
@@ -36,7 +39,7 @@ public class PickupEvent implements Listener {
     private final Map<UUID, Long> lastCheckTicks = new ConcurrentHashMap<>();
     // 插件主类引用，用于访问配置和状态
     private final PickupManager pickupManager; // 拾取管理器，负责实际的处理逻辑
-    private final PickUp plugin;               // 插件主类实例
+    private final Main plugin;               // 插件主类实例
     private final PickupConfig config;
 
     /**
@@ -44,7 +47,7 @@ public class PickupEvent implements Listener {
      * @param plugin 插件主类实例，提供配置和状态信息
      * @param pickupManager 拾取管理器，处理具体的拾取逻辑
      */
-    public PickupEvent(PickUp plugin, PickupManager pickupManager) {
+    public PickupEvent(Main plugin, PickupManager pickupManager) {
         this.plugin = plugin;
         this.pickupManager = pickupManager;
         this.config = plugin.getPickupConfig();

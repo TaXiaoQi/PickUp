@@ -1,4 +1,4 @@
-package pickup;
+package pickup.feature;
 
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -8,10 +8,16 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.util.StringUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.UnknownNullability;
+import pickup.Main;
+import pickup.config.PickupConfig;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 命令处理类 - 处理插件相关的所有命令
@@ -20,14 +26,14 @@ import java.util.*;
 public class ReloadCommand implements CommandExecutor, TabCompleter {
 
     // 插件主类引用，用于访问插件功能
-    private final PickUp plugin;
+    private final Main plugin;
     private final PickupConfig config;
 
     /**
      * 构造函数
      * @param plugin 插件主类实例
      */
-    public ReloadCommand(PickUp plugin) {
+    public ReloadCommand(@UnknownNullability Main plugin) {
         this.plugin = plugin;
         this.config = plugin.getPickupConfig();
     }

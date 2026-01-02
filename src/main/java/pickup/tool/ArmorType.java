@@ -1,4 +1,4 @@
-package pickup;
+package pickup.tool;
 
 import org.bukkit.Material;
 

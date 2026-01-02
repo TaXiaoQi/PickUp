@@ -1,15 +1,18 @@
 package pickup;
 
+
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
-
 import java.io.File;
 import java.util.Objects;
 
+import pickup.config.PickupConfig;
+import pickup.feature.*;
+import pickup.event.*;
 /**
  * PickUp插件主类 - 只负责初始化和生命周期管理
  */
-public class PickUp extends JavaPlugin {
+public class Main extends JavaPlugin {
 
     // 管理器实例
     private PickupManager pickupManager;

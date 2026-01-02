@@ -1,5 +1,5 @@
 
-package pickup;
+package pickup.feature;
 
 import org.bukkit.*;
 import org.bukkit.entity.*;
@@ -8,19 +8,22 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.inventory.*;
+import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.inventory.meta.Damageable;
+import pickup.*;
+import pickup.config.PickupConfig;
+import pickup.tool.ArmorType;
+import pickup.tool.PacketUtils;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 拾取管理器 - 核心逻辑处理类
@@ -31,7 +34,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     private final ItemSpatialIndex itemIndex;
 
     // 插件主类引用
-    private final PickUp plugin;
+    private final Main plugin;
     private final PickupConfig config; // 添加 config 字段
 
     // 配置参数（从 config 直接加载）
@@ -63,7 +66,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
      * @param plugin 插件主类实例
      * @param config 配置管理器
      */
-    public PickupManager(PickUp plugin, PickupConfig config, ItemSpatialIndex spatialIndex) {
+    public PickupManager(Main plugin, PickupConfig config, ItemSpatialIndex spatialIndex) {
         this.plugin = plugin;
         this.config = config;
 
@@ -331,7 +334,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
      * @param item 要拾取的物品
      * @return 是否可以拾取
      */
-    private boolean canPickupNow(LivingEntity entity, Item item) {
+    private boolean canPickupNow(LivingEntity entity, Item item, boolean skipEntitySpecificChecks) {
         long currentTime = item.getWorld().getGameTime();// 当前游戏时间（tick）
         PersistentDataContainer pdc = item.getPersistentDataContainer();
 
@@ -353,8 +356,8 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             return false;
         }
 
-        // 特殊处理：玩家自己丢弃的物品有自身免疫时间（仅对玩家有效）
-        if (entity instanceof Player player && source == ItemSourceType.PLAYER_DROP) {
+        // 如果不跳过实体特定检查，检查玩家自我免疫
+        if (!skipEntitySpecificChecks && entity instanceof Player player && source == ItemSourceType.PLAYER_DROP) {
             String droppedByStr = pdc.get(DROPPED_BY_KEY, PersistentDataType.STRING);
             if (droppedByStr != null) {
                 try {
@@ -371,8 +374,17 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             }
         }
 
-        // 检查距离是否在拾取范围内（使用预先计算的平方值优化性能）
-        return item.getLocation().distanceSquared(entity.getLocation()) <= pickupRangeSq;
+        // 如果有实体，检查距离
+        if (entity != null) {
+            return item.getLocation().distanceSquared(entity.getLocation()) <= pickupRangeSq;
+        }
+
+        return true; // 没有实体，只检查延迟条件
+    }
+
+    // 保持原有方法签名兼容性
+    private boolean canPickupNow(LivingEntity entity, Item item) {
+        return canPickupNow(entity, item, false);
     }
 
     // 容器拾取时检测是否是我们的物品
@@ -879,28 +891,62 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     private void startItemDriven() {
         int checkInterval = config.getPickupAttemptIntervalTicks();
         itemDetectionTask = new BukkitRunnable() {
-            private int scanIndex = 0; // 用于轮询玩家
+            private int scanIndex = 0; // 用于轮询物品
+            private final List<World> worlds = new ArrayList<>();
 
             @Override
             public void run() {
-                // 获取所有在线玩家
-                Collection<? extends Player> players = Bukkit.getOnlinePlayers();
-                if (players.isEmpty()) return;
+                // 获取所有世界（避免每次创建新列表）
+                if (worlds.isEmpty()) {
+                    worlds.addAll(Bukkit.getWorlds());
+                }
 
-                // 轮询机制：每次扫描只处理一部分玩家
-                List<Player> playerList = new ArrayList<>(players);
-                int playersPerScan = Math.max(1, playerList.size() / 4); // 每次处理25%的玩家
+                // 轮询机制：每次只处理一个世界的部分物品
+                if (worlds.isEmpty()) return;
 
-                int startIdx = scanIndex % playerList.size();
-                scanIndex = (scanIndex + 1) % playerList.size();
+                World world = worlds.get(scanIndex % worlds.size());
+                scanIndex++;
 
-                // 处理本轮玩家
-                for (int i = 0; i < playersPerScan; i++) {
-                    int idx = (startIdx + i) % playerList.size();
-                    Player player = playerList.get(idx);
-                    if (player.isOnline() && !player.isDead()) {
-                        scanItemsNearPlayer(player);
+                // ✅ 修复：使用正确的方法名
+                Set<Item> allItems = itemIndex.getAllItemsInWorld(world);
+                if (allItems == null || allItems.isEmpty()) return;
+
+                // 将物品转换为列表以便轮询
+                List<Item> itemList = new ArrayList<>(allItems);
+                if (itemList.isEmpty()) return;
+
+                // 每次最多处理一定数量的物品
+                int maxItemsPerScan = Math.min(20, itemList.size() / 4 + 1);
+                int startIdx = scanIndex % itemList.size();
+
+                int processed = 0;
+                for (int i = 0; i < maxItemsPerScan; i++) {
+                    int idx = (startIdx + i) % itemList.size();
+                    Item item = itemList.get(idx);
+
+                    if (item.isDead() || !item.isValid()) {
+                        // 从索引中移除无效物品
+                        itemIndex.unregisterItem(item);
+                        continue;
                     }
+
+                    // 检查物品是否在活跃期内
+                    if (!isItemActive(item)) {
+                        // 从索引中移除过期物品
+                        itemIndex.unregisterItem(item);
+                        continue;
+                    }
+
+                    // 检查物品是否可拾取（延迟等）
+                    if (isPickupReady(item)) {
+                        // 寻找最近的拾取者（玩家或生物）
+                        LivingEntity nearestPicker = findNearestPicker(item);
+                        if (nearestPicker != null) {
+                            performPickupForEntity(nearestPicker, item);
+                        }
+                    }
+
+                    processed++;
                 }
             }
         };
@@ -908,59 +954,64 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     }
 
     /**
-     * 扫描玩家附近区块的物品，同时查找附近的生物
+     * 检查物品是否已准备好被拾取（延迟检查）
+     * @param item 物品
+     * @return 是否可拾取
      */
-    private void scanItemsNearPlayer(Player player) {
-        if (player.getGameMode() == GameMode.SPECTATOR) return;
-
-        World world = player.getWorld();
-        Location loc = player.getLocation();
-
-        // 计算需要扫描的区块范围
-        double scanRange = config.getPickupRange();
-        int chunkRange = (int) Math.ceil(scanRange / 16.0) + 1; // +1确保覆盖
-
-        int centerChunkX = loc.getBlockX() >> 4;
-        int centerChunkZ = loc.getBlockZ() >> 4;
-
-        // 扫描附近区块
-        for (int dx = -chunkRange; dx <= chunkRange; dx++) {
-            for (int dz = -chunkRange; dz <= chunkRange; dz++) {
-                int chunkX = centerChunkX + dx;
-                int chunkZ = centerChunkZ + dz;
-
-                // 使用索引获取该区块的物品
-                Set<Item> chunkItems = itemIndex.getItemsInChunk(world, chunkX, chunkZ);
-                if (chunkItems.isEmpty()) continue;
-
-                // 处理该区块的物品
-                processChunkItemsForPlayer(player, chunkItems);
-            }
-        }
+    private boolean isPickupReady(Item item) {
+        // 使用现有的 canPickupNow 逻辑，但不检查特定实体
+        return canPickupNow(null, item, true);
     }
 
     /**
-     * 处理一个区块中的物品，寻找最近的拾取者
+     * 寻找物品附近最近的拾取者
+     * @param item 物品
+     * @return 最近的拾取者，如果没有则返回null
      */
-    private void processChunkItemsForPlayer(Player player, Set<Item> chunkItems) {
-        Location playerLoc = player.getLocation();
-        double rangeSq = config.getPickupRange() * config.getPickupRange();
+    private LivingEntity findNearestPicker(Item item) {
+        Location loc = item.getLocation();
+        double range = config.getPickupRange();
+        double rangeSq = range * range;
 
-        for (Item item : chunkItems) {
-            if (!item.isValid() || item.isDead()) continue;
+        LivingEntity nearestPicker = null;
+        double nearestDistSq = Double.MAX_VALUE;
 
-            // 快速距离检查（使用平方距离）
-            if (item.getLocation().distanceSquared(playerLoc) > rangeSq) continue;
+        // 查找范围内的所有生物和玩家
+        for (Entity entity : loc.getWorld().getNearbyEntities(loc, range, range, range)) {
+            if (!(entity instanceof LivingEntity livingEntity)) continue;
 
-            // 检查物品是否在活跃期内
-            if (!isItemActive(item)) continue;
+            // 检查是否具备拾取资格
+            if (!isEligiblePicker(livingEntity)) continue;
 
-            // 检查玩家是否可以拾取
-            if (canPickupNow(player, item)) {
-                performPickup(player, item);
-            }
+            // 快速距离检查
+            double distSq = livingEntity.getLocation().distanceSquared(loc);
+            if (distSq > rangeSq || distSq >= nearestDistSq) continue;
+
+            // 检查是否有自我免疫限制
+            if (!canPickupNow(livingEntity, item)) continue;
+
+            nearestPicker = livingEntity;
+            nearestDistSq = distSq;
+        }
+
+        return nearestPicker;
+    }
+
+    /**
+     * 执行拾取逻辑（统一处理玩家和生物）
+     * @param entity 拾取者
+     * @param item 物品
+     */
+    private void performPickupForEntity(LivingEntity entity, Item item) {
+        if (entity instanceof Player player) {
+            // 玩家使用专用拾取逻辑（处理背包等）
+            performPickup(player, item);
+        } else {
+            // 生物使用通用拾取逻辑（自动装备）
+            performLivingEntityPickup(entity, item);
         }
     }
+
 
     /**
      * 检查物品是否在活跃期内
@@ -1118,12 +1169,4 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         return active;
     }
 
-    /**
-     * 从索引中手动移除物品（供合并器等外部调用）
-     */
-    public void removeItemFromIndex(Item item) {
-        if (itemIndex != null && item != null) {
-            itemIndex.unregisterItem(item);
-        }
-    }
 }

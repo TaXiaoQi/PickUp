@@ -1,9 +1,9 @@
-package pickup;
+package pickup.tool;
 
-import org.bukkit.plugin.Plugin;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;

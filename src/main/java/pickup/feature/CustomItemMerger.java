@@ -1,4 +1,4 @@
-package pickup;
+package pickup.feature;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -10,7 +10,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
-
+import pickup.Main;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -253,8 +253,8 @@ public class CustomItemMerger {
         remove.remove();
 
         // 注意：这里需要能访问到 PickupManager。一种方式是将 plugin 强转为 PickUp 类型
-        if (plugin instanceof pickup.PickUp pickUpPlugin) {
-            pickup.PickupManager manager = pickUpPlugin.getPickupManager();
+        if (plugin instanceof Main pickUpPlugin) {
+            PickupManager manager = pickUpPlugin.getPickupManager();
             if (manager != null) {
                 manager.decrementPickupableItemCount(remove.getWorld());
             }

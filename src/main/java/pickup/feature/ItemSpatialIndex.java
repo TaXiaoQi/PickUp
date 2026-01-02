@@ -1,9 +1,10 @@
-package pickup;
+package pickup.feature;
 
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
 import org.bukkit.scheduler.BukkitRunnable;
+import pickup.Main;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class ItemSpatialIndex { // 移除 implements Listener
 
-    private final PickUp plugin;
+    private final Main plugin;
 
     // 核心数据结构：World -> ChunkCoord -> Set<Item>
     private final Map<World, Map<ChunkCoord, Set<Item>>> chunkIndex = new ConcurrentHashMap<>();
@@ -26,7 +27,7 @@ public class ItemSpatialIndex { // 移除 implements Listener
     // 按世界统计物品数量（优化hasPickupableItems检查）
     private final Map<World, AtomicInteger> worldItemCount = new ConcurrentHashMap<>();
 
-    public ItemSpatialIndex(PickUp plugin) {
+    public ItemSpatialIndex(Main plugin) {
         this.plugin = plugin;
         // 移除事件注册：plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
@@ -152,11 +153,19 @@ public class ItemSpatialIndex { // 移除 implements Listener
     }
 
     /**
-     * 获取世界物品数量
+     * 获取指定世界中的所有物品（供物品驱动模式使用）
      */
-    public int getWorldItemCount(World world) {
-        AtomicInteger count = worldItemCount.get(world);
-        return count != null ? count.get() : 0;
+    public Set<Item> getAllItemsInWorld(World world) {
+        Map<ChunkCoord, Set<Item>> worldChunks = chunkIndex.get(world);
+        if (worldChunks == null || worldChunks.isEmpty()) {
+            return Collections.emptySet();
+        }
+
+        Set<Item> allItems = ConcurrentHashMap.newKeySet();
+        for (Set<Item> chunkItems : worldChunks.values()) {
+            allItems.addAll(chunkItems);
+        }
+        return allItems;
     }
 
     // 清理队列表格
