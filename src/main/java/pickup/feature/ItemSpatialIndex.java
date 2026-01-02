@@ -133,19 +133,9 @@ public class ItemSpatialIndex { // 移除 implements Listener
         return result;
     }
 
-    /**
-     * 获取指定区块内的所有物品（供物品驱动模式使用）
-     */
-    public Set<Item> getItemsInChunk(World world, int chunkX, int chunkZ) {
-        Map<ChunkCoord, Set<Item>> worldChunks = chunkIndex.get(world);
-        if (worldChunks == null) return Collections.emptySet();
-
-        Set<Item> items = worldChunks.get(new ChunkCoord(chunkX, chunkZ));
-        return items != null ? items : Collections.emptySet();
-    }
 
     /**
-     * 检查世界是否有可拾取物品（优化hasPickupableItems）
+     * 检查世界是否有可拾取物品
      */
     public boolean hasItemsInWorld(World world) {
         AtomicInteger count = worldItemCount.get(world);

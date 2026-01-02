@@ -10,7 +10,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
-import pickup.Main;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -252,11 +252,14 @@ public class CustomItemMerger {
         // 删除被合并的物品实体
         remove.remove();
 
-        // 注意：这里需要能访问到 PickupManager。一种方式是将 plugin 强转为 PickUp 类型
-        if (plugin instanceof Main pickUpPlugin) {
-            PickupManager manager = pickUpPlugin.getPickupManager();
-            if (manager != null) {
-                manager.decrementPickupableItemCount(remove.getWorld());
+        // 从活跃列表中移除被合并的物品
+        activeEntries.remove(remove);
+
+        // ✅ 新增：从空间索引中移除被合并的物品
+        if (plugin instanceof pickup.Main pickupPlugin) {
+            pickup.feature.ItemSpatialIndex index = pickupPlugin.getItemSpatialIndex();
+            if (index != null) {
+                index.unregisterItem(remove);
             }
         }
     }
