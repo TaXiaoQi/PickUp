@@ -97,7 +97,7 @@ public class PickupConfig {
         this.pickupAttemptIntervalTicks = Math.max(1, config.getInt("mode.item-check-interval", 2));
 
         // 拾取配置
-        this.pickupRange = Math.max(0.1, Math.min(20.0, config.getDouble("pickup.range", 1.5)));
+        this.pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup.range", 1.5)));
         this.selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 5));
         this.offhandPickupEnabled = config.getBoolean("pickup.offhand-pickup", false);
         this.playerMinMoveDistance = Math.max(0.0, config.getDouble("mode.player-min-move-distance", 0.25));

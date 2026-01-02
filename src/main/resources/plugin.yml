@@ -1,6 +1,6 @@
 name: PickUp
 version: 1.3.0
-main: pickup.PickUp
+main: pickup.Main
 api-version: 1.14
 author: 小奇
 description: 自定义拾取插件

@@ -919,7 +919,6 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
                 int maxItemsPerScan = Math.min(20, itemList.size() / 4 + 1);
                 int startIdx = scanIndex % itemList.size();
 
-                int processed = 0;
                 for (int i = 0; i < maxItemsPerScan; i++) {
                     int idx = (startIdx + i) % itemList.size();
                     Item item = itemList.get(idx);
@@ -946,7 +945,6 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
                         }
                     }
 
-                    processed++;
                 }
             }
         };
