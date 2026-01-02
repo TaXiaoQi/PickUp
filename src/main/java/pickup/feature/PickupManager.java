@@ -440,7 +440,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         return !meta.getPersistentDataContainer().isEmpty();
     }
 
-    ItemStack createCleanStack(ItemStack original) {
+    public ItemStack createCleanStack(ItemStack original) {
         if (original == null || original.getType().isAir()) {
             return original;
         }
