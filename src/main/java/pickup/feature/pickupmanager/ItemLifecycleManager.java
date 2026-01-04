@@ -190,6 +190,22 @@ public class ItemLifecycleManager {
                 pdc.has(DROPPED_BY_KEY, PersistentDataType.STRING);
     }
 
+    /**
+     * 强制清理指定世界中的所有物品
+     */
+    public void forceCleanupWorld(World world) {
+        if (world == null) return;
+
+        int cleaned = 0;
+        for (Item item : world.getEntitiesByClass(Item.class)) {
+            if (cleanupSingleItem(item)) {
+                cleaned++;
+            }
+        }
+
+        plugin.getLogger().info("强制清理了世界 " + world.getName() + " 中的 " + cleaned + " 个物品");
+    }
+
     public ItemStack createCleanStack(ItemStack original) {
         if (original == null || original.getType().isAir()) {
             return original;

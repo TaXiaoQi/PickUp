@@ -1,6 +1,5 @@
 package pickup;
 
-
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -11,6 +10,7 @@ import pickup.config.PickupConfig;
 import pickup.feature.*;
 import pickup.event.*;
 import pickup.feature.pickupmanager.PickupManager;
+import org.bukkit.World;
 
 /**
  * PickUp插件主类 - 只负责初始化和生命周期管理
@@ -21,9 +21,8 @@ public class Main extends JavaPlugin {
     private PickupManager pickupManager;
     private CustomItemMerger itemMerger;
     private PickupConfig pickupConfig;
-    private PickupEvent pickupEventListener; // 新增：空间索引
+    private PickupEvent pickupEventListener;
     public ItemSpatialIndex itemSpatialIndex;
-
 
     // 调度任务引用
     private ScheduledTask globalTask;
@@ -42,7 +41,6 @@ public class Main extends JavaPlugin {
 
         getLogger().info("Starting PickUp plugin on Folia...");
 
-
         // 清理重启标志文件
         cleanupRestartFlag();
 
@@ -60,26 +58,28 @@ public class Main extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        // 清理所有物品的插件标记
-        if (pickupManager != null && pickupManager.getLifecycleManager() != null) {
-            pickupManager.getLifecycleManager().cleanupAllItems();
-        }
-        // 保存所有待定的配置更改
-        if (pickupConfig != null) {
-            pickupConfig.onDisable();
-        }
+        getLogger().info("开始卸载插件...");
 
-        // 取消所有调度任务
-        cancelAllScheduledTasks();
+        // 1. 强制清理所有物品标记（确保原版拾取恢复）
+        forceCleanupAllItems();
 
-        // ✅ 添加：停止空间索引的清理任务
+        // 2. 注销事件监听器（只在插件完全卸载时执行）
+        unregisterEventListener();
+
+        // 3. 停止空间索引清理任务
         if (itemSpatialIndex != null) {
             itemSpatialIndex.stopCleanupTask();
         }
 
-        // 安全停止所有模块
-        shutdownModules();
-        getLogger().info("PickUp 插件已卸载");
+        // 4. 保存所有待定的配置更改
+        if (pickupConfig != null) {
+            pickupConfig.onDisable();
+        }
+
+        // 5. 取消所有调度任务
+        cancelAllScheduledTasks();
+
+        getLogger().info("PickUp 插件已完全卸载");
     }
 
     /**
@@ -87,7 +87,6 @@ public class Main extends JavaPlugin {
      */
     private boolean isFoliaSupported() {
         try {
-            // 更可靠的检测方式
             Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
             Class.forName("io.papermc.paper.threadedregions.scheduler.RegionScheduler");
             return true;
@@ -124,16 +123,13 @@ public class Main extends JavaPlugin {
      * 初始化所有功能模块
      */
     private void initializeModules() {
-        // 1. 先创建配置管理器
-        this.pickupConfig = new PickupConfig(this);
-
-        // 2. 创建空间索引（必须先创建）
+        // 1. 创建空间索引
         this.itemSpatialIndex = new ItemSpatialIndex(this);
 
-        // 3. 创建拾取管理器（传入空间索引）
+        // 2. 创建拾取管理器
         this.pickupManager = new PickupManager(this, pickupConfig, itemSpatialIndex);
 
-        // 4. 创建物品合并器
+        // 3. 创建物品合并器
         if (pickupConfig.isItemMergeEnabled()) {
             this.itemMerger = new CustomItemMerger(this,
                     pickupConfig.getItemMergeRange(),
@@ -141,34 +137,41 @@ public class Main extends JavaPlugin {
                     pickupConfig.getItemMergeScanIntervalTicks());
         }
 
-        // 5. 注册事件监听器
+        // 4. 注册事件监听器（只注册一次）
         registerEventListener();
 
-        // 6. 启动功能（如果未禁用）
+        // 5. 启动功能（如果未禁用）
         if (!isPickupDisabled()) {
             enableModules();
+        }
+
+        // 6. 启动空间索引清理任务
+        if (itemSpatialIndex != null) {
+            itemSpatialIndex.startCleanupTask();
         }
     }
 
     /**
-     * 注册事件监听器
+     * 注册事件监听器 - 只在插件启用时注册一次
      */
     private void registerEventListener() {
-        // 注销可能存在的旧监听器
-        unregisterEventListener();
+        if (pickupEventListener != null) {
+            return; // 已经注册过，不再重复注册
+        }
 
-        // 创建新的监听器
-        this.pickupEventListener = new PickupEvent(this, pickupManager);
+        this.pickupEventListener = new PickupEvent(this);
         getServer().getPluginManager().registerEvents(pickupEventListener, this);
+        getLogger().info("事件监听器已注册（单次注册）");
     }
 
     /**
-     * 注销事件监听器
+     * 注销事件监听器 - 只在插件卸载时调用
      */
-    public void unregisterEventListener() {
+    private void unregisterEventListener() {
         if (pickupEventListener != null) {
             HandlerList.unregisterAll(pickupEventListener);
             pickupEventListener = null;
+            getLogger().info("事件监听器已注销（插件卸载）");
         }
     }
 
@@ -176,74 +179,57 @@ public class Main extends JavaPlugin {
      * 启动功能模块
      */
     private void enableModules() {
+        getLogger().info("启动功能模块...");
+
         if (pickupManager != null) {
             pickupManager.enable();
-
-            // 单独启用子组件，确保状态正确
-            if (pickupManager.getConfig().isPlayerDriven()) {
-                pickupManager.getPlayerHandler().enable();
-            }
-            if (pickupManager.getConfig().isItemDrivenEnabled()) {
-                pickupManager.getItemScheduler().enable();
-            }
         }
-        if (itemMerger != null && shouldRunItemMerger()) {
+
+        if (itemMerger != null && pickupConfig.isItemMergeEnabled()) {
             itemMerger.start();
         }
-        if (itemSpatialIndex != null) {
-            itemSpatialIndex.startCleanupTask(); // 启动清理任务
-        }
+
+        getLogger().info("功能模块已启动");
     }
 
     /**
      * 停止功能模块
      */
     private void disableModules() {
+        getLogger().info("停止功能模块...");
+
         if (pickupManager != null && pickupManager.isActive()) {
             pickupManager.disable();
         }
+
         if (itemMerger != null) {
             itemMerger.stop();
         }
-    }
 
-    /**
-     * 关闭时清理所有模块
-     */
-    private void shutdownModules() {
-        disableModules();
-        unregisterEventListener();
-
-        // 清理引用
-        this.pickupManager = null;
-        this.itemMerger = null;
-        this.pickupEventListener = null;
-        this.pickupConfig = null;
-        this.itemSpatialIndex = null;
+        getLogger().info("功能模块已停止");
     }
 
     /**
      * 重载插件配置和模块
      */
     public void reloadPickup() {
-        // 停止当前运行的功能
+        getLogger().info("开始重载插件...");
+
+        // 1. 停止当前运行的功能模块
         disableModules();
-        unregisterEventListener();
 
-        // 重载配置
-        if (pickupConfig != null) {
-            pickupConfig.reload();
-        } else {
-            this.pickupConfig = new PickupConfig(this);
-        }
+        // 2. 重载配置
+        pickupConfig.reload();
 
-        // 重新创建空间索引
-        this.itemSpatialIndex = new ItemSpatialIndex(this);
-
-        // 重新初始化拾取管理器
+        // 3. 重新初始化拾取管理器（重新订阅配置变更）
         this.pickupManager = new PickupManager(this, pickupConfig, itemSpatialIndex);
 
-        // 重新初始化物品合并器
+        // 4. 更新事件监听器中的管理器引用
+        if (pickupEventListener != null) {
+            pickupEventListener.updatePickupManager(pickupManager);
+        }
+
+        // 5. 重新初始化物品合并器
         if (pickupConfig.isItemMergeEnabled()) {
             this.itemMerger = new CustomItemMerger(this,
                     pickupConfig.getItemMergeRange(),
@@ -253,36 +239,61 @@ public class Main extends JavaPlugin {
             this.itemMerger = null;
         }
 
-        // 重新注册事件监听器
-        registerEventListener();
-
-        // 重新启动功能（如果未禁用）
+        // 6. 重新启动功能（如果未禁用）
         if (!isPickupDisabled()) {
             enableModules();
         }
 
-        getLogger().info("PickUp 配置已重载");
+        getLogger().info("插件重载完成");
     }
 
     /**
      * 启动拾取功能（命令调用）
      */
     public void startPickup() {
+        getLogger().info("启动拾取功能...");
+
         stoppedByCommand = false;
-        registerEventListener();
+
+        // 清理之前的物品标记（确保干净状态）
+        forceCleanupAllItems();
+
+        // 启用功能模块
         enableModules();
+
+        getLogger().info("拾取功能已启动");
     }
 
     /**
      * 停止拾取功能（命令调用）
      */
     public void stopPickup() {
-        if (pickupManager != null && pickupManager.getLifecycleManager() != null) {
-            pickupManager.getLifecycleManager().cleanupAllItems();
-        }
+        getLogger().info("停止拾取功能...");
+
         stoppedByCommand = true;
+
+        // 停止功能模块
         disableModules();
-        unregisterEventListener();
+
+        // 强制清理所有物品标记（恢复原版拾取）
+        forceCleanupAllItems();
+
+        getLogger().info("拾取功能已停止，原版拾取已恢复");
+    }
+
+    /**
+     * 强制清理所有物品标记
+     */
+    private void forceCleanupAllItems() {
+        getLogger().info("强制清理所有物品标记...");
+
+        if (pickupManager != null && pickupManager.getLifecycleManager() != null) {
+            for (World world : getServer().getWorlds()) {
+                pickupManager.getLifecycleManager().forceCleanupWorld(world);
+            }
+        }
+
+        getLogger().info("物品标记清理完成");
     }
 
     /**
@@ -301,16 +312,10 @@ public class Main extends JavaPlugin {
         return stoppedByCommand || !pickupConfig.isEnabled();
     }
 
-    /**
-     * 检查是否应该运行物品合并器
-     */
-    private boolean shouldRunItemMerger() {
-        return !isPickupDisabled() && pickupConfig.isItemMergeEnabled();
-    }
-
     // ========== Getter 方法 ==========
-    public boolean isStoppedByCommand() {return stoppedByCommand;}
-    public PickupConfig getPickupConfig() {return pickupConfig;}
-    public CustomItemMerger getItemMerger() {return itemMerger;}
-    public ItemSpatialIndex getItemSpatialIndex() {return this.itemSpatialIndex;}
+    public boolean isStoppedByCommand() { return stoppedByCommand; }
+    public PickupConfig getPickupConfig() { return pickupConfig; }
+    public CustomItemMerger getItemMerger() { return itemMerger; }
+    public ItemSpatialIndex getItemSpatialIndex() { return this.itemSpatialIndex; }
+    public PickupManager getPickupManager() { return pickupManager; }
 }
