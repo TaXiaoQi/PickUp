@@ -1,8 +1,6 @@
 package pickup;
 
 
-import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
-import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -26,9 +24,6 @@ public class Main extends JavaPlugin {
     private PickupEvent pickupEventListener; // 新增：空间索引
     public ItemSpatialIndex itemSpatialIndex;
 
-    // Folia调度器
-    private GlobalRegionScheduler globalScheduler;
-    private RegionScheduler regionScheduler;
 
     // 调度任务引用
     private ScheduledTask globalTask;
@@ -47,9 +42,6 @@ public class Main extends JavaPlugin {
 
         getLogger().info("Starting PickUp plugin on Folia...");
 
-        // 初始化folia调度器
-        this.globalScheduler = getServer().getGlobalRegionScheduler();
-        this.regionScheduler = getServer().getRegionScheduler();
 
         // 清理重启标志文件
         cleanupRestartFlag();
