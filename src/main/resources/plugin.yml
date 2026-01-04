@@ -1,5 +1,5 @@
 name: PickUp
-version: 1.4.0
+version: ${version}
 main: pickup.Main
 api-version: 1.14
 author: 小奇
