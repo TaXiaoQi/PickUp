@@ -69,7 +69,7 @@ public final class PacketUtils {
                 return;
             }
 
-            // 非Folia或已在正确线程
+            // 非folia或已在正确线程
             sendPickupAnimationInternal(plugin, viewer, collectedItem, amount);
 
         } catch (Exception e) {
@@ -82,11 +82,11 @@ public final class PacketUtils {
      */
     private static void sendPickupAnimationInternal(Plugin plugin, Player viewer, Entity collectedItem, int amount) {
         try {
-            // 获取被拾取实体的NMS对象
+            // 获取被拾取实体的nms对象
             Object nmsItem = getHandle(collectedItem);
             if (nmsItem == null) return;
 
-            // 获取实体ID
+            // 获取实体id
             int collectedId = getEntityId(nmsItem);
 
             // 获取拾取者（玩家）的NMS对象和ID
@@ -119,7 +119,7 @@ public final class PacketUtils {
             synchronized (REFLECTION_CACHE) {
                 method = (Method) REFLECTION_CACHE.get(cacheKey);
                 if (method == null) {
-                    // 动态获取CraftEntity类
+                    // 动态获取craftentity类
                     Class<?> craftEntityClass = getCraftEntityClass();
                     method = craftEntityClass.getMethod("getHandle");
                     method.setAccessible(true);
@@ -132,7 +132,7 @@ public final class PacketUtils {
     }
 
     /**
-     * 获取CraftEntity类
+     * 获取craftentity类
      */
     private static Class<?> getCraftEntityClass() throws ClassNotFoundException {
         String cacheKey = "craftEntityClass";
@@ -159,7 +159,7 @@ public final class PacketUtils {
     }
 
     /**
-     * 获取NMS实体的ID
+     * 获取nms实体的id
      */
     private static int getEntityId(Object nmsEntity) throws Exception {
         String cacheKey = "getIdMethod";

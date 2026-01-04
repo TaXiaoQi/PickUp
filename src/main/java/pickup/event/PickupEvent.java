@@ -22,7 +22,7 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import pickup.Main;
 import pickup.config.PickupConfig;
-import pickup.feature.PickupManager;
+import pickup.feature.pickupmanager.PickupManager;
 
 import java.util.Map;
 import java.util.UUID;

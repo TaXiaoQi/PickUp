@@ -12,6 +12,8 @@ import java.util.Objects;
 import pickup.config.PickupConfig;
 import pickup.feature.*;
 import pickup.event.*;
+import pickup.feature.pickupmanager.PickupManager;
+
 /**
  * PickUp插件主类 - 只负责初始化和生命周期管理
  */
