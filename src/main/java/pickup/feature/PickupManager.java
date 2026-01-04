@@ -173,8 +173,10 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         notifyMerger(item);
 
         // ✅ 新增：Folia 安全的 item-driven 拾取（仅当启用时）
-        if (plugin.getConfig().getBoolean("mode.item-driven", true)) {
-            startItemDrivenPickupTask(item);
+        if (config.isItemDrivenEnabled()) {
+            regionScheduler.execute(plugin, item.getLocation(), () -> {
+                startItemDrivenPickupTask(item);
+            });
         }
 
     }
@@ -450,7 +452,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             return item.getLocation().distanceSquared(entity.getLocation()) <= pickupRangeSq;
         }
 
-        return true; // 没有实体，只检查延迟条件
+        return false; // 没有实体，不能拾取
     }
 
     // 保持原有方法签名兼容性
@@ -943,7 +945,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             } catch (Exception e) {
                 plugin.getLogger().severe("Error in item detection task: " + e.getMessage());
             }
-        }, 0, checkInterval);
+        }, 1, checkInterval);
     }
 
     /**

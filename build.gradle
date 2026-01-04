@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'pickup'
-version = '1.0'
+version = '1.4.0'
 
 repositories {
     mavenCentral()
@@ -22,7 +22,7 @@ dependencies {
 }
 
 jar {
-    archiveFileName = 'PickUp-Spigot.jar'
+    archiveFileName = 'PickUp-Spigot-Folia.jar'
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
 }
