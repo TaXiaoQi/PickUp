@@ -40,13 +40,13 @@ public class PickupExecutor {
     /**
      * 执行玩家拾取物品
      */
-    public boolean performPlayerPickup(Player player, Item item) {
+    public void performPlayerPickup(Player player, Item item) {
         if (isPickupBlocked(player, item)) {
-            return false;
+            return;
         }
 
         ItemStack originalStack = item.getItemStack();
-        if (originalStack.getAmount() <= 0) return false;
+        if (originalStack.getAmount() <= 0) return;
         int amount = originalStack.getAmount();
 
         // 创建干净的物品副本
@@ -80,8 +80,6 @@ public class PickupExecutor {
         if (anyPickedUp) {
             handlePickupSuccess(player, item, amount, cleanStack, remainingAmount);
         }
-
-        return anyPickedUp;
     }
 
     /**
@@ -307,6 +305,11 @@ public class PickupExecutor {
             // 全部拾取完成，移除物品实体
             item.remove();
             itemIndex.unregisterItem(item);
+
+            // 同时从调度器移除
+            if (config.isItemDrivenEnabled()) {
+                plugin.getPickupManager().getItemScheduler().unregisterItem(item);
+            }
         }
     }
 

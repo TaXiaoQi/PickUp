@@ -6,6 +6,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
 import pickup.Main;
+import pickup.feature.pickupmanager.ItemDrivenPickupScheduler;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -144,22 +145,6 @@ public class ItemSpatialIndex {
         return count != null && count.get() > 0;
     }
 
-    /**
-     * 获取指定世界中的所有物品（供物品驱动模式使用）
-     */
-    public Set<Item> getAllItemsInWorld(World world) {
-        Map<ChunkCoord, Set<Item>> worldChunks = chunkIndex.get(world);
-        if (worldChunks == null || worldChunks.isEmpty()) {
-            return Collections.emptySet();
-        }
-
-        Set<Item> allItems = ConcurrentHashMap.newKeySet();
-        for (Set<Item> chunkItems : worldChunks.values()) {
-            allItems.addAll(chunkItems);
-        }
-        return allItems;
-    }
-
     // 清理队列表格
     public void startCleanupTask() {
         // 确保使用正确的调度器
@@ -201,6 +186,15 @@ public class ItemSpatialIndex {
                     if (!item.isValid() || item.isDead()) {
                         iter.remove();
                         itemToChunk.remove(item);
+
+                        // 同时从调度器移除
+                        if (plugin.getPickupManager() != null) {
+                            ItemDrivenPickupScheduler scheduler = plugin.getPickupManager().getItemScheduler();
+                            if (scheduler != null) {
+                                scheduler.unregisterItem(item);
+                            }
+                        }
+
                         cleaned++;
                     }
                 }

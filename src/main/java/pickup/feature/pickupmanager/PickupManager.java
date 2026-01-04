@@ -37,7 +37,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         this.lifecycleManager = new ItemLifecycleManager(plugin, itemIndex);
         PickupExecutor pickupExecutor = new PickupExecutor(plugin, config, itemIndex, lifecycleManager);
         this.playerHandler = new PlayerDrivenPickupHandler(plugin, config, itemIndex, pickupExecutor);
-        this.itemScheduler = new ItemDrivenPickupScheduler(plugin, config, itemIndex, pickupExecutor);
+        this.itemScheduler = new ItemDrivenPickupScheduler(plugin, config, pickupExecutor);
 
         this.config.addChangeListener(this);
 
@@ -119,11 +119,13 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
      */
     public void handleItemSpawn(ItemSpawnEvent event) {
         Item item = event.getEntity();
+
+        // 1. 处理物品生命周期（设置NBT标记等）
         lifecycleManager.handleItemSpawn(item);
 
-        // 启动物品驱动任务
+        // 2. 注册到物品驱动调度器（如果启用）
         if (config.isItemDrivenEnabled()) {
-            itemScheduler.startItemDrivenPickupTask(item);
+            itemScheduler.registerItem(item);
         }
     }
 
@@ -134,6 +136,11 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         Player player = event.getPlayer();
         Item item = event.getItemDrop();
         lifecycleManager.handlePlayerDrop(item, player.getUniqueId());
+
+        // 注册到物品驱动调度器
+        if (config.isItemDrivenEnabled()) {
+            itemScheduler.registerItem(item);
+        }
     }
 
     /**
@@ -142,6 +149,11 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     public void handleBlockDrop(BlockDropItemEvent event) {
         for (Item item : event.getItems()) {
             lifecycleManager.handleBlockDrop(item);
+
+            // 注册到物品驱动调度器
+            if (config.isItemDrivenEnabled()) {
+                itemScheduler.registerItem(item);
+            }
         }
     }
 
@@ -211,6 +223,10 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     // ===== 获取组件实例 =====
     public ItemLifecycleManager getLifecycleManager() {
         return lifecycleManager;
+    }
+
+    public ItemDrivenPickupScheduler getItemScheduler() {
+        return itemScheduler;
     }
 
     public Main getPlugin() {

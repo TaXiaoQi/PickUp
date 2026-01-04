@@ -22,6 +22,7 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import pickup.Main;
 import pickup.config.PickupConfig;
+import pickup.feature.pickupmanager.ItemDrivenPickupScheduler;
 import pickup.feature.pickupmanager.PickupManager;
 
 import java.util.Map;
@@ -221,7 +222,17 @@ public class PickupEvent implements Listener {
             ItemStack clean = manager.createCleanStack(original);
             item.setItemStack(clean);
         }
+
+        // 从空间索引和调度器移除
         plugin.getItemSpatialIndex().unregisterItem(item);
+
+        // 从调度器移除
+        if (manager.isActive() && config.isItemDrivenEnabled()) {
+            ItemDrivenPickupScheduler scheduler = manager.getItemScheduler();
+            if (scheduler != null) {
+                scheduler.unregisterItem(item);
+            }
+        }
     }
 
     /**
@@ -298,14 +309,23 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onItemDespawn(org.bukkit.event.entity.ItemDespawnEvent event) {
-        // 只有当插件启用且物品是由我们管理的，才需要更新计数
         if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
             return;
         }
 
         Item item = event.getEntity();
-        // 从空间索引中移除
+
+        // 1. 从空间索引中移除
         plugin.getItemSpatialIndex().unregisterItem(item);
+
+        // 2. 从调度器队列中移除（如果物品驱动模式启用）
+        PickupManager manager = getPickupManager();
+        if (manager != null && manager.isActive() && config.isItemDrivenEnabled()) {
+            ItemDrivenPickupScheduler scheduler = manager.getItemScheduler();
+            if (scheduler != null) {
+                scheduler.unregisterItem(item);
+            }
+        }
     }
 
     // 玩家离线事件
