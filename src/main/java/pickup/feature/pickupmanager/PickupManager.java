@@ -208,19 +208,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         );
     }
 
-    // ====== 获取组件实例 ======
-    public PlayerDrivenPickupHandler getPlayerHandler() {
-        return playerHandler;
-    }
-
-    public ItemDrivenPickupScheduler getItemScheduler() {
-        return itemScheduler;
-    }
-
-    public PickupConfig getConfig() {
-        return config;
-    }
-
+    // ===== 获取组件实例 =====
     public ItemLifecycleManager getLifecycleManager() {
         return lifecycleManager;
     }

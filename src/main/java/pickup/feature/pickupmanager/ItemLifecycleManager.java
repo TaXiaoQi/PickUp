@@ -124,41 +124,11 @@ public class ItemLifecycleManager {
     // ====== 工具方法 ======
 
     /**
-     * 清理所有物品的插件标记，恢复原版拾取
-     * 用于插件禁用时一次性清理所有世界中的物品
-     */
-    public void cleanupAllItems() {
-        plugin.getLogger().info("开始清理所有物品的插件标记...");
-
-        int totalCleaned = 0;
-        for (World world : plugin.getServer().getWorlds()) {
-            totalCleaned += cleanupItemsInWorld(world);
-        }
-
-        plugin.getLogger().info("已清理 " + totalCleaned + " 个物品的插件标记");
-    }
-
-    /**
-     * 清理指定世界中的所有物品
-     */
-    private int cleanupItemsInWorld(World world) {
-        int cleaned = 0;
-
-        for (Item item : world.getEntitiesByClass(Item.class)) {
-            if (cleanupSingleItem(item)) {
-                cleaned++;
-            }
-        }
-
-        return cleaned;
-    }
-
-    /**
      * 清理单个物品
      */
-    private boolean cleanupSingleItem(Item item) {
+    private void cleanupSingleItem(Item item) {
         if (item == null || !item.isValid() || item.isDead()) {
-            return false;
+            return;
         }
         try {
             item.setPickupDelay(0);
@@ -173,10 +143,8 @@ public class ItemLifecycleManager {
                 ItemStack cleanStack = createCleanStack(stack);
                 item.setItemStack(cleanStack);
             }
-            return true;
         } catch (Exception e) {
             plugin.getLogger().warning("清理物品失败: " + e.getMessage());
-            return false;
         }
     }
 
@@ -196,14 +164,10 @@ public class ItemLifecycleManager {
     public void forceCleanupWorld(World world) {
         if (world == null) return;
 
-        int cleaned = 0;
         for (Item item : world.getEntitiesByClass(Item.class)) {
-            if (cleanupSingleItem(item)) {
-                cleaned++;
-            }
+            cleanupSingleItem(item);
         }
 
-        plugin.getLogger().info("强制清理了世界 " + world.getName() + " 中的 " + cleaned + " 个物品");
     }
 
     public ItemStack createCleanStack(ItemStack original) {
