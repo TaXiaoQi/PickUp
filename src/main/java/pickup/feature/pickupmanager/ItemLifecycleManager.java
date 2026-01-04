@@ -11,8 +11,6 @@ import pickup.Main;
 import pickup.feature.ItemSpatialIndex;
 import pickup.feature.CustomItemMerger;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Set;
 
@@ -34,7 +32,7 @@ public class ItemLifecycleManager {
         PLAYER_DROP, NATURAL_DROP, INSTANT_PICKUP, UNKNOWN
     }
 
-    // 需要保护NBT的方块物品
+    // 需要保护nbt的方块物品
     private static final Set<Material> BLOCK_ITEMS_WITH_NBT = Set.of(
             Material.SHULKER_BOX, Material.WHITE_SHULKER_BOX, Material.ORANGE_SHULKER_BOX,
             Material.MAGENTA_SHULKER_BOX, Material.LIGHT_BLUE_SHULKER_BOX, Material.YELLOW_SHULKER_BOX,
@@ -125,6 +123,63 @@ public class ItemLifecycleManager {
 
     // ====== 工具方法 ======
 
+    /**
+     * 清理所有物品的插件标记，恢复原版拾取
+     * 用于插件禁用时一次性清理所有世界中的物品
+     */
+    public void cleanupAllItems() {
+        plugin.getLogger().info("开始清理所有物品的插件标记...");
+
+        int totalCleaned = 0;
+        for (World world : plugin.getServer().getWorlds()) {
+            totalCleaned += cleanupItemsInWorld(world);
+        }
+
+        plugin.getLogger().info("已清理 " + totalCleaned + " 个物品的插件标记");
+    }
+
+    /**
+     * 清理指定世界中的所有物品
+     */
+    private int cleanupItemsInWorld(World world) {
+        int cleaned = 0;
+
+        for (Item item : world.getEntitiesByClass(Item.class)) {
+            if (cleanupSingleItem(item)) {
+                cleaned++;
+            }
+        }
+
+        return cleaned;
+    }
+
+    /**
+     * 清理单个物品
+     */
+    private boolean cleanupSingleItem(Item item) {
+        if (item == null || !item.isValid() || item.isDead()) {
+            return false;
+        }
+        try {
+            item.setPickupDelay(0);
+
+            PersistentDataContainer pdc = item.getPersistentDataContainer();
+            pdc.remove(SPAWN_TICK_KEY);
+            pdc.remove(DROPPED_BY_KEY);
+            pdc.remove(SOURCE_KEY);
+
+            ItemStack stack = item.getItemStack();
+            if (!stack.getType().isAir()) {
+                ItemStack cleanStack = createCleanStack(stack);
+                item.setItemStack(cleanStack);
+            }
+            return true;
+        } catch (Exception e) {
+            plugin.getLogger().warning("清理物品失败: " + e.getMessage());
+            return false;
+        }
+    }
+
     public boolean hasPickupMark(ItemStack stack) {
         if (stack == null || stack.getType().isAir()) return false;
         ItemMeta meta = stack.getItemMeta();
@@ -204,12 +259,22 @@ public class ItemLifecycleManager {
 
     private void disableVanillaPickup(Item item) {
         try {
-            Object nmsItem = getGetHandleMethod().invoke(item);
-            Field delayField = getItemPickupDelayField();
-            delayField.set(nmsItem, 6000);
+            item.setPickupDelay(6000);
+
+            if (plugin.getServer().getClass().getName().contains("folia")) {
+                item.setCanPlayerPickup(false);
+            }
+
         } catch (Exception e) {
-            plugin.getLogger().warning("Failed to disable vanilla pickup for item: " +
-                    item.getItemStack().getType());
+            try {
+                Object handle = item.getClass().getMethod("getHandle").invoke(item);
+                java.lang.reflect.Field field = handle.getClass().getDeclaredField("pickupDelay");
+                field.setAccessible(true);
+                field.set(handle, 6000);
+            } catch (Exception ex) {
+                plugin.getLogger().warning("无法完全禁用原版拾取逻辑: " +
+                        item.getItemStack().getType() + " - 插件仍会尝试处理拾取");
+            }
         }
     }
 
@@ -218,55 +283,5 @@ public class ItemLifecycleManager {
         if (merger != null) {
             merger.notifyItemReady(item);
         }
-    }
-
-    // ====== 反射工具 ======
-
-    private static volatile Field cachedPickupDelayField = null;
-    private static volatile Method cachedGetHandleMethod = null;
-
-    public static Field getItemPickupDelayField() {
-        if (cachedPickupDelayField != null) {
-            return cachedPickupDelayField;
-        }
-
-        Class<?> nmsItemClass;
-        try {
-            nmsItemClass = Class.forName("net.minecraft.world.entity.item.ItemEntity");
-        } catch (ClassNotFoundException e1) {
-            try {
-                String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
-                nmsItemClass = Class.forName("net.minecraft.server." + version + ".EntityItem");
-            } catch (Exception e2) {
-                throw new RuntimeException("Unsupported server version for Item pickupDelay reflection.", e2);
-            }
-        }
-
-        String[] candidates = {"pickupDelay", "bK", "c", "d", "e"};
-        for (String fieldName : candidates) {
-            try {
-                Field field = nmsItemClass.getDeclaredField(fieldName);
-                if (field.getType() == int.class) {
-                    field.setAccessible(true);
-                    cachedPickupDelayField = field;
-                    return field;
-                }
-            } catch (NoSuchFieldException ignored) {}
-        }
-
-        throw new RuntimeException("Could not find pickupDelay field in " + nmsItemClass.getName());
-    }
-
-    public static Method getGetHandleMethod() throws Exception {
-        if (cachedGetHandleMethod != null) {
-            return cachedGetHandleMethod;
-        }
-
-        String version = Bukkit.getServer().getClass().getPackage().getName().split("\\.")[3];
-        Class<?> craftEntityClass = Class.forName("org.bukkit.craftbukkit." + version + ".entity.CraftEntity");
-
-        cachedGetHandleMethod = craftEntityClass.getMethod("getHandle");
-        cachedGetHandleMethod.setAccessible(true);
-        return cachedGetHandleMethod;
     }
 }

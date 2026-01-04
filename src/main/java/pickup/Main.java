@@ -60,6 +60,10 @@ public class Main extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        // 清理所有物品的插件标记
+        if (pickupManager != null && pickupManager.getLifecycleManager() != null) {
+            pickupManager.getLifecycleManager().cleanupAllItems();
+        }
         // 保存所有待定的配置更改
         if (pickupConfig != null) {
             pickupConfig.onDisable();
@@ -201,7 +205,6 @@ public class Main extends JavaPlugin {
         if (itemMerger != null) {
             itemMerger.stop();
         }
-        // itemSpatialIndex 不需要停止，它会自动被垃圾回收
     }
 
     /**
@@ -274,6 +277,9 @@ public class Main extends JavaPlugin {
      * 停止拾取功能（命令调用）
      */
     public void stopPickup() {
+        if (pickupManager != null && pickupManager.getLifecycleManager() != null) {
+            pickupManager.getLifecycleManager().cleanupAllItems();
+        }
         stoppedByCommand = true;
         disableModules();
         unregisterEventListener();

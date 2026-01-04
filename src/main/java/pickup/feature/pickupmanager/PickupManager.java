@@ -221,6 +221,10 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         return config;
     }
 
+    public ItemLifecycleManager getLifecycleManager() {
+        return lifecycleManager;
+    }
+
     public Main getPlugin() {
         return plugin;
     }
