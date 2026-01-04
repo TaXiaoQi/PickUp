@@ -39,23 +39,23 @@ public class ItemSpatialIndex {
      * 注册新物品到索引
      */
     public void registerItem(Item item) {
-        if (item == null || !item.isValid() || item.isDead()) return;
-
+        if (item == null) {
+            plugin.getLogger().warning("registerItem: item为null");
+            return;
+        }
         ChunkCoord coord = getChunkCoord(item.getLocation());
+        try {
+            chunkIndex.computeIfAbsent(item.getWorld(), w -> new ConcurrentHashMap<>())
+                    .computeIfAbsent(coord, c -> ConcurrentHashMap.newKeySet())
+                    .add(item);
 
-        chunkIndex.computeIfAbsent(item.getWorld(), w -> new ConcurrentHashMap<>())
-                .computeIfAbsent(coord, c -> ConcurrentHashMap.newKeySet())
-                .add(item);
+            itemToChunk.put(item, coord);
 
-        itemToChunk.put(item, coord);
-
-        // 更新世界物品计数
-        worldItemCount.computeIfAbsent(item.getWorld(), w -> new AtomicInteger(0))
-                .incrementAndGet();
-
-        if (plugin.getConfig().getBoolean("debug", false)) {
-            plugin.getLogger().fine("注册物品到索引: " + item.getItemStack().getType() +
-                    " 在区块 " + coord + ", 世界: " + item.getWorld().getName());
+            // 更新世界物品计数
+            worldItemCount.computeIfAbsent(item.getWorld(), w -> new AtomicInteger(0))
+                    .incrementAndGet();
+        } catch (Exception e) {
+            plugin.getLogger().warning("注册物品时出错: " + e.getMessage());
         }
     }
 

@@ -121,7 +121,6 @@ public class ItemDrivenPickupScheduler {
                         continue;
                     }
 
-                    // 每轮扫描处理的物品数量 - 使用固定值，因为配置文件中没有这个选项
                     int itemsPerScan = 20; // 固定值，因为配置中没有 items-per-scan
                     int itemsToProcess = Math.min(itemsPerScan, queue.size());
 

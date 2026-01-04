@@ -53,8 +53,6 @@ public class PlayerDrivenPickupHandler {
     public void enable() {
         if (active) return;
         active = true;
-        plugin.getLogger().info("玩家驱动模式已启用，移动检测间隔: " +
-                config.getPlayerMoveCheckIntervalTicks() + " ticks");
     }
 
     public void disable() {

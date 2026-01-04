@@ -118,18 +118,13 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     public void handleItemSpawn(ItemSpawnEvent event) {
         Item item = event.getEntity();
 
-        // 1. 处理物品生命周期（设置NBT标记等）
+        // 直接处理物品生命周期（此时物品应该已经完全初始化）
         lifecycleManager.handleItemSpawn(item);
 
-        // 2. 延迟注册到物品驱动调度器（确保物品完全初始化）
-        plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
-            if (!item.isValid() || item.isDead()) return;
-
-            // 注册到物品驱动调度器（如果启用）
-            if (config.isItemDrivenEnabled()) {
-                itemScheduler.registerItem(item);
-            }
-        }, 3L);
+        // 注册到物品驱动调度器（如果启用）
+        if (config.isItemDrivenEnabled()) {
+            itemScheduler.registerItem(item);
+        }
     }
 
     /**

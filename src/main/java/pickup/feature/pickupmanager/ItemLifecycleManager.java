@@ -52,13 +52,8 @@ public class ItemLifecycleManager {
     }
 
     // ====== 核心处理方法 ======
-
     public void handleItemSpawn(Item item) {
-        // 快速检查：物品是否有效
-        if (item == null || !item.isValid() || item.isDead()) {
-            return;
-        }
-
+        // 延迟任务已经确保了物品有效性，所以这里不需要再检查
         PersistentDataContainer pdc = item.getPersistentDataContainer();
 
         // 防重复初始化检查
@@ -66,16 +61,11 @@ public class ItemLifecycleManager {
             return;
         }
 
-        // 设置来源标记
-        String existingSource = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
-        if (existingSource == null) {
-            pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
-        }
+        // 设置来源标记（默认为自然掉落）
+        pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
 
         // 设置生成时间
-        if (!pdc.has(SPAWN_TICK_KEY, PersistentDataType.LONG)) {
-            pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, item.getWorld().getGameTime());
-        }
+        pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, item.getWorld().getGameTime());
 
         // 禁用原版拾取逻辑
         disableVanillaPickup(item);
@@ -83,14 +73,8 @@ public class ItemLifecycleManager {
         // 标记为已初始化
         pdc.set(INITIALIZED_KEY, PersistentDataType.BYTE, (byte) 1);
 
-        // 注册到空间索引
-        itemIndex.registerItem(item);
-
-        // 通知物品合并器（延迟执行，确保完全初始化）
-        plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
-            if (!item.isValid() || item.isDead()) return;
-            notifyMerger(item);
-        }, 2L);
+        // 通知物品合并器
+        notifyMerger(item);
     }
 
     public void handlePlayerDrop(Item item, java.util.UUID playerId) {

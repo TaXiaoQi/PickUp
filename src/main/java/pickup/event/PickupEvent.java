@@ -53,7 +53,7 @@ public class PickupEvent implements Listener {
      */
     public void updatePickupManager(PickupManager newManager) {
         this.pickupManager = newManager;
-        plugin.getLogger().info("事件监听器中的管理器引用已更新");
+        plugin.getLogger().info("事件监听器已更新");
     }
 
     /**
@@ -72,7 +72,6 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onItemSpawn(ItemSpawnEvent event) {
-        // 检查插件是否启用（防止插件禁用后仍有事件处理）
         if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
             return;
         }
@@ -83,10 +82,19 @@ public class PickupEvent implements Listener {
             return;
         }
 
-        // 1. 通知空间索引注册物品
-        plugin.getItemSpatialIndex().registerItem(event.getEntity());
-        // 2. 处理拾取逻辑
-        manager.handleItemSpawn(event);
+        // 1. 立即注册到空间索引（无论物品是否完全初始化）
+        Item item = event.getEntity();
+        plugin.getItemSpatialIndex().registerItem(item);
+
+        // 2. 完全在延迟任务中处理生命周期逻辑
+        plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
+            if (!item.isValid() || item.isDead()) {
+                return;
+            }
+
+            // 委托给拾取管理器处理拾取逻辑
+            manager.handleItemSpawn(event);
+        }, 3L);
     }
 
     /**
