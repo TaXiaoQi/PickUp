@@ -1,5 +1,6 @@
 package pickup.feature;
 
+import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -9,6 +10,7 @@ import org.bukkit.util.StringUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.UnknownNullability;
+import org.jspecify.annotations.NonNull;
 import pickup.Main;
 import pickup.config.PickupConfig;
 
@@ -42,7 +44,7 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
      * 命令执行主入口
      */
     @Override
-    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String @NonNull [] args) {
         // 控制台直接跳过权限检查
         boolean isConsole = sender instanceof org.bukkit.command.ConsoleCommandSender;
 
@@ -144,7 +146,7 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
     public @Nullable List<String> onTabComplete(@NotNull CommandSender sender,
                                                 @NotNull Command command,
                                                 @NotNull String alias,
-                                                @NotNull String[] args) {
+                                                @NotNull String @NonNull [] args) {
 
         if (!sender.hasPermission("pickup.admin")) {
             return Collections.emptyList();
@@ -280,8 +282,9 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§7示例: §e/up set mode.player-driven false");
     }
 
+
     /**
-     * 处理服务器重启逻辑
+     * 处理服务器重启逻辑（Folia兼容版本）
      */
     private void handleServerRestart(CommandSender sender) {
         File flag = new File("restart.flag");
@@ -308,14 +311,42 @@ public class ReloadCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        // 通知所有玩家服务器即将重启
         String msg = "§c[系统] 服务器将在 10 秒后重启！";
-        sender.sendMessage("服务器将在 10 秒后重启！");
         Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(msg));
         plugin.getLogger().info("[Server Restart] Triggered by " + sender.getName());
 
-        // 延迟10秒后关闭服务器
-        Bukkit.getScheduler().runTaskLater(plugin, Bukkit::shutdown, 200L);
+        GlobalRegionScheduler scheduler = Bukkit.getGlobalRegionScheduler();
+
+        // 5秒倒计时任务
+        for (int i = 5; i >= 1; i--) {
+            final int secondsLeft = i;
+            scheduler.runDelayed(plugin, task -> {
+                // 创建标题组件
+                net.kyori.adventure.title.Title title = net.kyori.adventure.title.Title.title(
+                        net.kyori.adventure.text.Component.empty(), // 主标题（空）
+                        net.kyori.adventure.text.Component
+                                .text("服务器将在 " + secondsLeft + " 秒后重启！")
+                                .color(net.kyori.adventure.text.format.NamedTextColor.RED), // 副标题
+                        net.kyori.adventure.title.Title.Times.times(
+                                java.time.Duration.ofMillis(250),  // 淡入时间：250ms
+                                java.time.Duration.ofMillis(1000), // 停留时间：1000ms
+                                java.time.Duration.ofMillis(250)   // 淡出时间：250ms
+                        )
+                );
+                for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
+                    player.showTitle(title); // 发送标题
+                }
+            }, (10 - i) * 20L); // 第5、4、3、2、1秒发送
+        }
+
+        scheduler.runDelayed(plugin, task -> {
+            try {
+                Bukkit.shutdown();
+            } catch (Exception e) {
+                plugin.getLogger().severe("关闭服务器时发生错误: " + e.getMessage());
+                System.exit(0);
+            }
+        }, 200L);
     }
 
     /**
