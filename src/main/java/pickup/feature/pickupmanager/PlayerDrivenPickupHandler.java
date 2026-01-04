@@ -34,27 +34,33 @@ public class PlayerDrivenPickupHandler {
     public void tryPickup(Player player) {
         if (!active) return;
         if (player.getGameMode() == org.bukkit.GameMode.SPECTATOR) return;
+        if (!player.isOnline()) return;
 
-        // 使用索引获取附近物品
-        double range = Math.sqrt(config.getPickupRange() * config.getPickupRange());
+        // 使用索引获取附近物品 - 修复范围计算
+        double range = config.getPickupRange();
         Set<Item> nearbyItems = itemIndex.getNearbyItems(player.getLocation(), range);
 
         // 对每个物品尝试拾取
         for (Item item : nearbyItems) {
-            pickupExecutor.performPlayerPickup(player, item);
+            if (item.isValid() && !item.isDead()) {
+                pickupExecutor.performPlayerPickup(player, item);
+            }
         }
     }
 
     // ====== 启用/禁用控制 ======
 
     public void enable() {
+        if (active) return;
         active = true;
         plugin.getLogger().info("玩家驱动模式已启用，移动检测间隔: " +
                 config.getPlayerMoveCheckIntervalTicks() + " ticks");
     }
 
     public void disable() {
+        if (!active) return;
         active = false;
+        plugin.getLogger().info("玩家驱动模式已禁用");
     }
 
     public boolean isActive() {

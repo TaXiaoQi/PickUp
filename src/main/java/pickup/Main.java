@@ -174,6 +174,14 @@ public class Main extends JavaPlugin {
     private void enableModules() {
         if (pickupManager != null) {
             pickupManager.enable();
+
+            // 单独启用子组件，确保状态正确
+            if (pickupManager.getConfig().isPlayerDriven()) {
+                pickupManager.getPlayerHandler().enable();
+            }
+            if (pickupManager.getConfig().isItemDrivenEnabled()) {
+                pickupManager.getItemScheduler().enable();
+            }
         }
         if (itemMerger != null && shouldRunItemMerger()) {
             itemMerger.start();

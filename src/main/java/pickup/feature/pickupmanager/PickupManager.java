@@ -51,8 +51,24 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     public void onConfigChanged(String key, Object value) {
         plugin.getLogger().info("配置变更: " + key + " = " + value);
 
-        // 不再维护本地变量，只记录日志
+        // 根据配置变化重新启用/禁用相关组件
         switch (key) {
+            case "mode.player-driven":
+                if (config.isPlayerDriven()) {
+                    playerHandler.enable();
+                } else {
+                    playerHandler.disable();
+                }
+                break;
+
+            case "mode.item-driven":
+                if (config.isItemDrivenEnabled()) {
+                    itemScheduler.enable();
+                } else {
+                    itemScheduler.disable();
+                }
+                break;
+
             case "pickup.range":
             case "pickup.delays.player-drop":
             case "pickup.delays.natural-drop":
@@ -61,7 +77,36 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             case "mode.item-active-duration":
                 plugin.getLogger().info("配置已更新，相关组件将使用新值");
                 break;
+
+            case "enabled":
+                if (Boolean.TRUE.equals(value)) {
+                    if (config.isPlayerDriven()) {
+                        playerHandler.enable();
+                    }
+                    if (config.isItemDrivenEnabled()) {
+                        itemScheduler.enable();
+                    }
+                } else {
+                    playerHandler.disable();
+                    itemScheduler.disable();
+                }
+                break;
+
             case "__RELOAD_ALL__":
+                // 重新加载所有配置后重新启用组件
+                if (!plugin.isPickupDisabled()) {
+                    if (config.isPlayerDriven()) {
+                        playerHandler.enable();
+                    } else {
+                        playerHandler.disable();
+                    }
+
+                    if (config.isItemDrivenEnabled()) {
+                        itemScheduler.enable();
+                    } else {
+                        itemScheduler.disable();
+                    }
+                }
                 plugin.getLogger().info("所有配置已重新加载");
                 break;
         }
@@ -164,6 +209,17 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     }
 
     // ====== 获取组件实例 ======
+    public PlayerDrivenPickupHandler getPlayerHandler() {
+        return playerHandler;
+    }
+
+    public ItemDrivenPickupScheduler getItemScheduler() {
+        return itemScheduler;
+    }
+
+    public PickupConfig getConfig() {
+        return config;
+    }
 
     public Main getPlugin() {
         return plugin;
