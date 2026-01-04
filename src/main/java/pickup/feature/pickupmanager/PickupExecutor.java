@@ -126,9 +126,14 @@ public class PickupExecutor {
     }
 
     public boolean canPickupNow(LivingEntity entity, Item item, boolean skipEntitySpecificChecks) {
-        long currentTime = item.getWorld().getGameTime();
+        // 添加初始化检查
         PersistentDataContainer pdc = item.getPersistentDataContainer();
+        Byte initialized = pdc.get(ItemLifecycleManager.INITIALIZED_KEY, PersistentDataType.BYTE);
+        if (initialized == null || initialized == 0) {
+            return false; // 未初始化的物品不能被拾取
+        }
 
+        long currentTime = item.getWorld().getGameTime();
         Long spawnTick = pdc.get(ItemLifecycleManager.SPAWN_TICK_KEY, PersistentDataType.LONG);
         String sourceStr = pdc.get(ItemLifecycleManager.SOURCE_KEY, PersistentDataType.STRING);
         ItemLifecycleManager.ItemSourceType source = parseSource(sourceStr);

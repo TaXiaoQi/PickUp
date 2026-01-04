@@ -39,8 +39,6 @@ public class Main extends JavaPlugin {
             return;
         }
 
-        getLogger().info("Starting PickUp plugin on Folia...");
-
         // 清理重启标志文件
         cleanupRestartFlag();
 
@@ -58,7 +56,6 @@ public class Main extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        getLogger().info("开始卸载插件...");
 
         // 1. 强制清理所有物品标记（确保原版拾取恢复）
         forceCleanupAllItems();
@@ -161,7 +158,6 @@ public class Main extends JavaPlugin {
 
         this.pickupEventListener = new PickupEvent(this);
         getServer().getPluginManager().registerEvents(pickupEventListener, this);
-        getLogger().info("事件监听器已注册（单次注册）");
     }
 
     /**
@@ -171,7 +167,6 @@ public class Main extends JavaPlugin {
         if (pickupEventListener != null) {
             HandlerList.unregisterAll(pickupEventListener);
             pickupEventListener = null;
-            getLogger().info("事件监听器已注销（插件卸载）");
         }
     }
 
@@ -179,8 +174,6 @@ public class Main extends JavaPlugin {
      * 启动功能模块
      */
     private void enableModules() {
-        getLogger().info("启动功能模块...");
-
         if (pickupManager != null) {
             pickupManager.enable();
         }
@@ -189,15 +182,12 @@ public class Main extends JavaPlugin {
             itemMerger.start();
         }
 
-        getLogger().info("功能模块已启动");
     }
 
     /**
      * 停止功能模块
      */
     private void disableModules() {
-        getLogger().info("停止功能模块...");
-
         if (pickupManager != null && pickupManager.isActive()) {
             pickupManager.disable();
         }
@@ -206,7 +196,6 @@ public class Main extends JavaPlugin {
             itemMerger.stop();
         }
 
-        getLogger().info("功能模块已停止");
     }
 
     /**
@@ -251,7 +240,6 @@ public class Main extends JavaPlugin {
      * 启动拾取功能（命令调用）
      */
     public void startPickup() {
-        getLogger().info("启动拾取功能...");
 
         stoppedByCommand = false;
 
@@ -268,7 +256,6 @@ public class Main extends JavaPlugin {
      * 停止拾取功能（命令调用）
      */
     public void stopPickup() {
-        getLogger().info("停止拾取功能...");
 
         stoppedByCommand = true;
 
@@ -285,7 +272,6 @@ public class Main extends JavaPlugin {
      * 强制清理所有物品标记
      */
     private void forceCleanupAllItems() {
-        getLogger().info("强制清理所有物品标记...");
 
         if (pickupManager != null && pickupManager.getLifecycleManager() != null) {
             for (World world : getServer().getWorlds()) {
@@ -293,7 +279,6 @@ public class Main extends JavaPlugin {
             }
         }
 
-        getLogger().info("物品标记清理完成");
     }
 
     /**

@@ -182,12 +182,17 @@ public class ItemDrivenPickupScheduler {
 
     private boolean isItemActive(Item item) {
         PersistentDataContainer pdc = item.getPersistentDataContainer();
-        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
 
+        // 首先检查是否已初始化
+        Byte initialized = pdc.get(ItemLifecycleManager.INITIALIZED_KEY, PersistentDataType.BYTE);
+        if (initialized == null || initialized == 0) {
+            return false; // 未初始化的物品不应被处理
+        }
+
+        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
         if (spawnTick == null) return true;
 
         long currentTick = item.getWorld().getGameTime();
-        // 使用配置文件中的 item-active-duration
         return currentTick - spawnTick <= config.getActiveDetectionTicks();
     }
 

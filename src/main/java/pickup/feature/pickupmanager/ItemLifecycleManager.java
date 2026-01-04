@@ -24,6 +24,7 @@ public class ItemLifecycleManager {
 
     // 持久化数据容器键
     public static final NamespacedKey SPAWN_TICK_KEY = new NamespacedKey("pickup", "spawn_tick");
+    public static final NamespacedKey INITIALIZED_KEY = new NamespacedKey("pickup", "initialized");
     public static final NamespacedKey DROPPED_BY_KEY = new NamespacedKey("pickup", "dropped_by");
     public static final NamespacedKey SOURCE_KEY = new NamespacedKey("pickup", "source");
 
@@ -53,7 +54,17 @@ public class ItemLifecycleManager {
     // ====== 核心处理方法 ======
 
     public void handleItemSpawn(Item item) {
+        // 快速检查：物品是否有效
+        if (item == null || !item.isValid() || item.isDead()) {
+            return;
+        }
+
         PersistentDataContainer pdc = item.getPersistentDataContainer();
+
+        // 防重复初始化检查
+        if (pdc.has(INITIALIZED_KEY, PersistentDataType.BYTE)) {
+            return;
+        }
 
         // 设置来源标记
         String existingSource = pdc.get(SOURCE_KEY, PersistentDataType.STRING);
@@ -69,25 +80,61 @@ public class ItemLifecycleManager {
         // 禁用原版拾取逻辑
         disableVanillaPickup(item);
 
-        // 通知物品合并器
-        notifyMerger(item);
+        // 标记为已初始化
+        pdc.set(INITIALIZED_KEY, PersistentDataType.BYTE, (byte) 1);
 
-        // 注册到索引
+        // 注册到空间索引
         itemIndex.registerItem(item);
+
+        // 通知物品合并器（延迟执行，确保完全初始化）
+        plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
+            if (!item.isValid() || item.isDead()) return;
+            notifyMerger(item);
+        }, 2L);
     }
 
     public void handlePlayerDrop(Item item, java.util.UUID playerId) {
+        // 添加初始化检查
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
+        if (pdc.has(INITIALIZED_KEY, PersistentDataType.BYTE)) {
+            return; // 已经初始化过
+        }
+
         markItemAsPlayerDrop(item, playerId);
         disableVanillaPickup(item);
-        notifyMerger(item);
+
+        // 标记为已初始化
+        pdc.set(INITIALIZED_KEY, PersistentDataType.BYTE, (byte) 1);
+
         itemIndex.registerItem(item);
+
+        // 延迟通知合并器
+        plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
+            if (!item.isValid() || item.isDead()) return;
+            notifyMerger(item);
+        }, 2L);
     }
 
     public void handleBlockDrop(Item item) {
+        // 添加初始化检查
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
+        if (pdc.has(INITIALIZED_KEY, PersistentDataType.BYTE)) {
+            return; // 已经初始化过
+        }
+
         markItemAsNaturalDrop(item);
         disableVanillaPickup(item);
-        notifyMerger(item);
+
+        // 标记为已初始化
+        pdc.set(INITIALIZED_KEY, PersistentDataType.BYTE, (byte) 1);
+
         itemIndex.registerItem(item);
+
+        // 延迟通知合并器
+        plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
+            if (!item.isValid() || item.isDead()) return;
+            notifyMerger(item);
+        }, 2L);
     }
 
     public void handleEntityDeath(EntityDeathEvent event) {
@@ -137,6 +184,7 @@ public class ItemLifecycleManager {
             pdc.remove(SPAWN_TICK_KEY);
             pdc.remove(DROPPED_BY_KEY);
             pdc.remove(SOURCE_KEY);
+            pdc.remove(INITIALIZED_KEY);
 
             ItemStack stack = item.getItemStack();
             if (!stack.getType().isAir()) {
