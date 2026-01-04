@@ -1,6 +1,9 @@
 package pickup;
 
 
+import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
+import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
@@ -20,11 +23,32 @@ public class Main extends JavaPlugin {
     private PickupConfig pickupConfig;
     private PickupEvent pickupEventListener; // 新增：空间索引
     public ItemSpatialIndex itemSpatialIndex;
+
+    // Folia调度器
+    private GlobalRegionScheduler globalScheduler;
+    private RegionScheduler regionScheduler;
+
+    // 调度任务引用
+    private ScheduledTask globalTask;
+
     // 控制标志
     private boolean stoppedByCommand = false;
 
     @Override
     public void onEnable() {
+        // 检查folia支持
+        if (!isFoliaSupported()) {
+            getLogger().severe("Folia not supported on this server! Plugin will be disabled.");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
+        getLogger().info("Starting PickUp plugin on Folia...");
+
+        // 初始化folia调度器
+        this.globalScheduler = getServer().getGlobalRegionScheduler();
+        this.regionScheduler = getServer().getRegionScheduler();
+
         // 清理重启标志文件
         cleanupRestartFlag();
 
@@ -47,9 +71,41 @@ public class Main extends JavaPlugin {
             pickupConfig.onDisable();
         }
 
+        // 取消所有调度任务
+        cancelAllScheduledTasks();
+
+        // ✅ 添加：停止空间索引的清理任务
+        if (itemSpatialIndex != null) {
+            itemSpatialIndex.stopCleanupTask();
+        }
+
         // 安全停止所有模块
         shutdownModules();
         getLogger().info("PickUp 插件已卸载");
+    }
+
+    /**
+     * 检查folia支持
+     */
+    private boolean isFoliaSupported() {
+        try {
+            // 更可靠的检测方式
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            Class.forName("io.papermc.paper.threadedregions.scheduler.RegionScheduler");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    /**
+     * 取消所有调度任务
+     */
+    private void cancelAllScheduledTasks() {
+        if (globalTask != null) {
+            globalTask.cancel();
+            globalTask = null;
+        }
     }
 
     /**

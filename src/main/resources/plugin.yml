@@ -4,6 +4,7 @@ main: pickup.Main
 api-version: 1.14
 author: 小奇
 description: 自定义拾取插件
+folia-supported: true
 
 commands:
   up:

@@ -1,9 +1,10 @@
 package pickup.feature;
 
+import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
-import org.bukkit.scheduler.BukkitRunnable;
 import pickup.Main;
 
 import java.util.*;
@@ -14,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 统一物品空间索引系统
  * 按区块分区缓存物品，供物品驱动和玩家驱动模式共享使用
  */
-public class ItemSpatialIndex { // 移除 implements Listener
+public class ItemSpatialIndex {
 
     private final Main plugin;
 
@@ -27,9 +28,10 @@ public class ItemSpatialIndex { // 移除 implements Listener
     // 按世界统计物品数量（优化hasPickupableItems检查）
     private final Map<World, AtomicInteger> worldItemCount = new ConcurrentHashMap<>();
 
+    //
+    private ScheduledTask cleanupTask;
     public ItemSpatialIndex(Main plugin) {
         this.plugin = plugin;
-        // 移除事件注册：plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
     /**
@@ -160,12 +162,23 @@ public class ItemSpatialIndex { // 移除 implements Listener
 
     // 清理队列表格
     public void startCleanupTask() {
-        new BukkitRunnable() {
-            @Override
-            public void run() {
+        // 确保使用正确的调度器
+        plugin.getServer().getGlobalRegionScheduler();
+        GlobalRegionScheduler scheduler = plugin.getServer().getGlobalRegionScheduler();
+        this.cleanupTask = scheduler.runAtFixedRate(plugin, task -> {
+            try {
                 cleanupInvalidItems();
+            } catch (Exception e) {
+                plugin.getLogger().severe("Error in cleanup task: " + e.getMessage());
             }
-        }.runTaskTimer(plugin, 20 * 60 * 5, 20 * 60 * 5); // 每5分钟清理一次
+        }, 20 * 60 * 5, 20 * 60 * 5); // 每5分钟清理一次
+    }
+
+    public void stopCleanupTask() {
+        if (cleanupTask != null) {
+            cleanupTask.cancel();
+            cleanupTask = null;
+        }
     }
 
     /**

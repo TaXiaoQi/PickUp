@@ -1,5 +1,7 @@
 package pickup.feature;
 
+import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -9,10 +11,10 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 
 /**
  * 自定义物品合并器
@@ -29,8 +31,8 @@ public class CustomItemMerger {
     private final int scanIntervalTicks;
     // 运行状态标志
     private boolean running = false;
-    // 定时任务对象
-    private BukkitRunnable mergeTask = null;
+    // Folia调度任务
+    private ScheduledTask mergeTask = null;
 
     // 记录处于"主动期"内的物品及其元数据（线程安全的Map）
     private final Map<Item, ItemEntry> activeEntries = new ConcurrentHashMap<>();
@@ -63,15 +65,20 @@ public class CustomItemMerger {
      * 启动合并器
      */
     public void start() {
-        if (running) return; // 防止重复启动
+        if (running) return;
         running = true;
 
-        // 创建定时任务，每tick执行一次
-        this.mergeTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!running) return; // 检查运行状态
+        // 获取folia全局调度器
+        GlobalRegionScheduler scheduler = plugin.getServer().getGlobalRegionScheduler();
 
+        // 创建定时任务（全局任务，不绑定到特定区域）
+        this.mergeTask = scheduler.runAtFixedRate(plugin, task -> {
+            if (!running) {
+                task.cancel();
+                return;
+            }
+
+            try {
                 // 遍历所有活跃物品
                 Iterator<Map.Entry<Item, ItemEntry>> iter = activeEntries.entrySet().iterator();
                 while (iter.hasNext()) {
@@ -86,36 +93,39 @@ public class CustomItemMerger {
                     }
 
                     World world = item.getWorld();
-                    long currentTick = world.getFullTime(); // 使用游戏世界的时间（tick）
+                    long currentTick = world.getFullTime();
 
                     // 检查是否已过活跃期
                     if (currentTick - meta.spawnTick >= activeDurationTicks) {
-                        iter.remove(); // 从活跃列表中移除
+                        iter.remove();
                         continue;
                     }
 
                     // 检查是否到达扫描时间
                     if (currentTick - meta.lastScanTick >= scanIntervalTicks) {
-                        meta.lastScanTick = currentTick; // 更新上次扫描时间
-                        tryMergeWithNearby(item); // 尝试合并
+                        meta.lastScanTick = currentTick;
+
+                        // 在地块调度器上执行合并检查（确保线程安全）
+                        Location loc = item.getLocation();
+                        plugin.getServer().getRegionScheduler().execute(plugin, loc, () -> tryMergeWithNearby(item));
                     }
                 }
+            } catch (Exception e) {
+                plugin.getLogger().log(Level.SEVERE, "Error in item merger task", e);
             }
-        };
-        // 启动定时任务：延迟0tick，周期1tick（每tick执行）
-        this.mergeTask.runTaskTimer(this.plugin, 0, 1);
+        }, 0, 1); // 延迟0，周期1tick
     }
 
     /**
      * 停止合并器
      */
     public void stop() {
+        running = false;
         if (mergeTask != null) {
-            mergeTask.cancel(); // 取消定时任务
+            mergeTask.cancel();
             mergeTask = null;
         }
-        running = false; // 更新运行状态
-        activeEntries.clear(); // 清空活跃物品列表
+        activeEntries.clear();
     }
 
     /**

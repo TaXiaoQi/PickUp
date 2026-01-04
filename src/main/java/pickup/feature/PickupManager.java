@@ -14,7 +14,9 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.scheduler.BukkitRunnable;
+import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
+import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import pickup.*;
 import pickup.config.PickupConfig;
 import pickup.tool.ArmorType;
@@ -23,7 +25,6 @@ import pickup.tool.PacketUtils;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 拾取管理器 - 核心逻辑处理类
@@ -53,30 +54,25 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     private static final NamespacedKey DROPPED_BY_KEY = new NamespacedKey("pickup", "dropped_by");
     private static final NamespacedKey SOURCE_KEY = new NamespacedKey("pickup", "source");
 
-    // 玩家驱动模式相关
-    private final Set<UUID> activePlayers = ConcurrentHashMap.newKeySet(); // 活跃玩家集合（线程安全）
-    private BukkitRunnable activePlayerUpdater = null; // 玩家更新定时任务
+    // Folia调度任务
+    private ScheduledTask itemDetectionTask = null;
+    private final GlobalRegionScheduler globalScheduler;
+    private final RegionScheduler regionScheduler;
 
-
-    // 物品驱动模式相关
-    private BukkitRunnable itemDetectionTask = null; // 物品检测定时任务
 
     /**
-     * 构造函数（带 config 参数）
-     * @param plugin 插件主类实例
-     * @param config 配置管理器
+     * 构造函数
      */
     public PickupManager(Main plugin, PickupConfig config, ItemSpatialIndex spatialIndex) {
         this.plugin = plugin;
         this.config = config;
-
-        // 初始化物品索引
         this.itemIndex = spatialIndex;
 
-        // 注册为配置变更监听器
-        this.config.addChangeListener(this);
+        // 初始化folia调度器
+        this.globalScheduler = plugin.getServer().getGlobalRegionScheduler();
+        this.regionScheduler = plugin.getServer().getRegionScheduler();
 
-        // 加载配置
+        this.config.addChangeListener(this);
         loadConfig();
     }
 
@@ -832,25 +828,17 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
      * 停止所有定时任务，清理数据，恢复原版逻辑
      */
     public void disable() {
-        if (!active) return; // 防止重复禁用
+        if (!active) return;
         active = false;
 
-        // 停止玩家驱动模式相关任务
-        if (activePlayerUpdater != null) {
-            activePlayerUpdater.cancel();
-            activePlayerUpdater = null;
-        }
-        activePlayers.clear(); // 清空活跃玩家列表
-
-        // 停止物品驱动模式相关任务
+        // 停止folia调度任务
         if (itemDetectionTask != null) {
             itemDetectionTask.cancel();
             itemDetectionTask = null;
         }
 
-        // 恢复原版物品拾取延迟为0（立即可拾取）
+        // 恢复原版物品拾取延迟为0
         restoreOriginalPickupDelayToZero();
-
     }
 
     /**
@@ -890,65 +878,69 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
      */
     private void startItemDriven() {
         int checkInterval = config.getPickupAttemptIntervalTicks();
-        itemDetectionTask = new BukkitRunnable() {
-            private int scanIndex = 0; // 用于轮询物品
-            private final List<World> worlds = new ArrayList<>();
 
-            @Override
-            public void run() {
-                // 获取所有世界（避免每次创建新列表）
-                if (worlds.isEmpty()) {
-                    worlds.addAll(Bukkit.getWorlds());
-                }
+        itemDetectionTask = globalScheduler.runAtFixedRate(plugin, task -> {
+            if (!active) {
+                task.cancel();
+                return;
+            }
 
-                // 轮询机制：每次只处理一个世界的部分物品
+            try {
+                // 获取所有世界（线程安全方式）
+                List<World> worlds = new ArrayList<>(Bukkit.getWorlds());
                 if (worlds.isEmpty()) return;
 
-                World world = worlds.get(scanIndex % worlds.size());
-                scanIndex++;
+                // 轮询机制
+                for (World world : worlds) {
+                    if (!world.isChunkLoaded(0, 0)) continue; // 简单检查
 
-                // ✅ 修复：使用正确的方法名
-                Set<Item> allItems = itemIndex.getAllItemsInWorld(world);
-                if (allItems == null || allItems.isEmpty()) return;
+                    // 在地块调度器上执行物品处理
+                    Set<Item> allItems = itemIndex.getAllItemsInWorld(world);
+                    if (allItems == null || allItems.isEmpty()) continue;
 
-                // 将物品转换为列表以便轮询
-                List<Item> itemList = new ArrayList<>(allItems);
-                if (itemList.isEmpty()) return;
+                    List<Item> itemList = new ArrayList<>(allItems);
+                    int maxItemsPerScan = Math.min(20, itemList.size() / 4 + 1);
 
-                // 每次最多处理一定数量的物品
-                int maxItemsPerScan = Math.min(20, itemList.size() / 4 + 1);
-                int startIdx = scanIndex % itemList.size();
+                    for (int i = 0; i < maxItemsPerScan && i < itemList.size(); i++) {
+                        final Item item = itemList.get(i);
 
-                for (int i = 0; i < maxItemsPerScan; i++) {
-                    int idx = (startIdx + i) % itemList.size();
-                    Item item = itemList.get(idx);
-
-                    if (item.isDead() || !item.isValid()) {
-                        // 从索引中移除无效物品
-                        itemIndex.unregisterItem(item);
-                        continue;
+                        // 在地块中执行拾取逻辑
+                        Location loc = item.getLocation();
+                        regionScheduler.execute(plugin, loc, () -> {
+                            try {
+                                processItemForPickup(item);
+                            } catch (Exception e) {
+                                plugin.getLogger().warning("Error processing item: " + e.getMessage());
+                            }
+                        });
                     }
-
-                    // 检查物品是否在活跃期内
-                    if (!isItemActive(item)) {
-                        // 从索引中移除过期物品
-                        itemIndex.unregisterItem(item);
-                        continue;
-                    }
-
-                    // 检查物品是否可拾取（延迟等）
-                    if (isPickupReady(item)) {
-                        // 寻找最近的拾取者（玩家或生物）
-                        LivingEntity nearestPicker = findNearestPicker(item);
-                        if (nearestPicker != null) {
-                            performPickupForEntity(nearestPicker, item);
-                        }
-                    }
-
                 }
+            } catch (Exception e) {
+                plugin.getLogger().severe("Error in item detection task: " + e.getMessage());
             }
-        };
-        itemDetectionTask.runTaskTimer(plugin, 0, checkInterval);
+        }, 0, checkInterval);
+    }
+
+    /**
+     * 处理单个物品的拾取逻辑（在地块线程中执行）
+     */
+    private void processItemForPickup(Item item) {
+        if (item.isDead() || !item.isValid()) {
+            itemIndex.unregisterItem(item);
+            return;
+        }
+
+        if (!isItemActive(item)) {
+            itemIndex.unregisterItem(item);
+            return;
+        }
+
+        if (isPickupReady(item)) {
+            LivingEntity nearestPicker = findNearestPicker(item);
+            if (nearestPicker != null) {
+                performPickupForEntity(nearestPicker, item);
+            }
+        }
     }
 
     /**
