@@ -2,6 +2,7 @@
 package pickup.feature;
 
 import org.bukkit.*;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.*;
 import org.bukkit.event.block.BlockDropItemEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
@@ -171,6 +172,80 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         // 通知物品合并器有新物品可合并
         notifyMerger(item);
 
+        // ✅ 新增：Folia 安全的 item-driven 拾取（仅当启用时）
+        if (plugin.getConfig().getBoolean("mode.item-driven", true)) {
+            startItemDrivenPickupTask(item);
+        }
+
+    }
+
+    private void startItemDrivenPickupTask(Item item) {
+        if (!item.isValid()) return;
+
+        ConfigurationSection modeConfig = plugin.getConfig().getConfigurationSection("mode");
+        if (modeConfig == null) return;
+
+        long activeDuration = modeConfig.getLong("item-active-duration", 60L);
+        long checkInterval = modeConfig.getLong("item-check-interval", 2L);
+        double pickupRange = plugin.getConfig().getDouble("pickup.range", 1.5);
+
+        World world = item.getWorld();
+        Location loc = item.getLocation();
+        int chunkX = loc.getBlockX() >> 4;
+        int chunkZ = loc.getBlockZ() >> 4;
+
+        // 在物品所属 Region 启动周期性任务
+        plugin.getServer().getRegionScheduler().runAtFixedRate(
+                plugin,
+                world,
+                chunkX,
+                chunkZ,
+                task -> {
+                    // 检查物品是否还有效
+                    if (!item.isValid()) {
+                        task.cancel();
+                        return;
+                    }
+
+                    // 获取附近玩家（Folia 安全 API）
+                    Collection<Player> nearbyPlayers = world.getNearbyEntitiesByType(
+                            Player.class,
+                            loc,
+                            pickupRange
+                    );
+
+                    boolean pickedUp = false;
+                    for (Player player : nearbyPlayers) {
+                        if (tryPickup(player, item)) {
+                            pickedUp = true;
+                            break; // 物品已被拾取，退出
+                        }
+                    }
+
+                    // 如果物品被拾取或超时，取消任务
+                    long currentTick = world.getGameTime();
+                    Long spawnTick = item.getPersistentDataContainer().get(SPAWN_TICK_KEY, PersistentDataType.LONG);
+                    if (pickedUp || spawnTick == null || (currentTick - spawnTick) > activeDuration) {
+                        task.cancel();
+                    }
+                },
+                1L,               // 首次延迟 1 tick
+                checkInterval     // 检查间隔
+        );
+    }
+
+    /**
+     * 尝试让玩家拾取指定的单个物品
+     * @param player 玩家
+     * @param item 物品
+     * @return 是否成功拾取
+     */
+    private boolean tryPickup(Player player, Item item) {
+        if (canPickupNow(player, item)) {
+            performPickup(player, item);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -674,25 +749,14 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
 
         // ====== 第一阶段：合并（按优先级：副手 → 光标 → 背包）======
 
-        // 1. 首先检查副手（最高优先级）- 无论配置如何，合并阶段都检查
+        // 1. 副手合并
         if (remainingAmount > 0) {
             ItemStack offhand = inv.getItemInOffHand();
-            // 副手有相同物品且未满（合并，不关心配置）
             if (offhand.isSimilar(cleanStack) && offhand.getAmount() < offhand.getMaxStackSize()) {
                 int space = offhand.getMaxStackSize() - offhand.getAmount();
                 if (space > 0) {
                     int toAdd = Math.min(space, remainingAmount);
-                    // ✅ 清理PDC标签
-                    ItemStack newOffhand = createCleanStack(new ItemStack(offhand.getType(), offhand.getAmount() + toAdd));
-                    // 保留原物品的其他元数据（名称、附魔等）
-                    if (offhand.hasItemMeta()) {
-                        ItemMeta meta = offhand.getItemMeta().clone();
-                        // 手动清理pdc标签
-                        meta.getPersistentDataContainer().remove(SOURCE_KEY);
-                        meta.getPersistentDataContainer().remove(SPAWN_TICK_KEY);
-                        meta.getPersistentDataContainer().remove(DROPPED_BY_KEY);
-                        newOffhand.setItemMeta(meta);
-                    }
+                    ItemStack newOffhand = cleanAndPreserveMeta(offhand, offhand.getAmount() + toAdd);
                     inv.setItemInOffHand(newOffhand);
                     remainingAmount -= toAdd;
                     anyPickedUp = true;
@@ -700,22 +764,14 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             }
         }
 
-        // 2. 检查光标（手持物品）
+        // 2. 光标合并
         if (remainingAmount > 0) {
             ItemStack cursor = player.getItemOnCursor();
             if (!cursor.getType().isAir() && cursor.isSimilar(cleanStack)) {
                 int space = cursor.getMaxStackSize() - cursor.getAmount();
                 if (space > 0) {
                     int toAdd = Math.min(space, remainingAmount);
-                    // ✅ 清理PDC标签
-                    ItemStack newCursor = createCleanStack(new ItemStack(cursor.getType(), cursor.getAmount() + toAdd));
-                    if (cursor.hasItemMeta()) {
-                        ItemMeta meta = cursor.getItemMeta().clone();
-                        meta.getPersistentDataContainer().remove(SOURCE_KEY);
-                        meta.getPersistentDataContainer().remove(SPAWN_TICK_KEY);
-                        meta.getPersistentDataContainer().remove(DROPPED_BY_KEY);
-                        newCursor.setItemMeta(meta);
-                    }
+                    ItemStack newCursor = cleanAndPreserveMeta(cursor, cursor.getAmount() + toAdd);
                     player.setItemOnCursor(newCursor);
                     remainingAmount -= toAdd;
                     anyPickedUp = true;
@@ -723,25 +779,16 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             }
         }
 
-        // 3. 检查背包（0-35槽）
+        // 3. 背包合并
         if (remainingAmount > 0) {
             for (int slot = 0; slot < 36; slot++) {
                 if (remainingAmount == 0) break;
-
                 ItemStack existing = inv.getItem(slot);
                 if (existing != null && existing.isSimilar(cleanStack)) {
                     int space = existing.getMaxStackSize() - existing.getAmount();
                     if (space > 0) {
                         int toAdd = Math.min(space, remainingAmount);
-                        // ✅ 清理PDC标签
-                        ItemStack newExisting = createCleanStack(new ItemStack(existing.getType(), existing.getAmount() + toAdd));
-                        if (existing.hasItemMeta()) {
-                            ItemMeta meta = existing.getItemMeta().clone();
-                            meta.getPersistentDataContainer().remove(SOURCE_KEY);
-                            meta.getPersistentDataContainer().remove(SPAWN_TICK_KEY);
-                            meta.getPersistentDataContainer().remove(DROPPED_BY_KEY);
-                            newExisting.setItemMeta(meta);
-                        }
+                        ItemStack newExisting = cleanAndPreserveMeta(existing, existing.getAmount() + toAdd);
                         inv.setItem(slot, newExisting);
                         remainingAmount -= toAdd;
                         anyPickedUp = true;
@@ -837,30 +884,8 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             itemDetectionTask = null;
         }
 
-        // 恢复原版物品拾取延迟为0
-        restoreOriginalPickupDelayToZero();
     }
 
-    /**
-     * 恢复所有物品的原版拾取延迟为0（禁用插件时调用）
-     * 使物品可以立即被原版机制拾取
-     */
-    public void restoreOriginalPickupDelayToZero() {
-        for (World world : Bukkit.getWorlds()) {
-            for (Entity entity : world.getEntities()) {
-                if (entity instanceof Item item) {
-                    try {
-                        // 使用反射恢复pickupDelay为0（立即可拾取）
-                        Object nmsItem = getGetHandleMethod().invoke(item);
-                        Field field = getItemPickupDelayField();
-                        field.set(nmsItem, 0); // 设置为0，立即可拾取
-                    } catch (Exception ignored) {
-                        // 忽略反射异常
-                    }
-                }
-            }
-        }
-    }
 
     /**
      * 启动玩家驱动模式
@@ -1014,7 +1039,7 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
             return true; // 没有记录时间，默认活跃
         }
 
-        long currentTick = item.getWorld().getFullTime();
+        long currentTick = item.getWorld().getGameTime();
         return currentTick - spawnTick <= activeDetectionTicks;
     }
 
@@ -1159,4 +1184,21 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         return active;
     }
 
+    // 清理 PDC 并保留其他元数据
+    private static ItemStack cleanAndPreserveMeta(ItemStack original, int newAmount) {
+        if (original == null || original.getType().isAir()) {
+            return new ItemStack(Material.AIR);
+        }
+        ItemStack clean = original.clone();
+        clean.setAmount(newAmount);
+        if (clean.hasItemMeta()) {
+            ItemMeta meta = clean.getItemMeta().clone();
+            PersistentDataContainer pdc = meta.getPersistentDataContainer();
+            pdc.remove(SOURCE_KEY);
+            pdc.remove(SPAWN_TICK_KEY);
+            pdc.remove(DROPPED_BY_KEY);
+            clean.setItemMeta(meta);
+        }
+        return clean;
+    }
 }
