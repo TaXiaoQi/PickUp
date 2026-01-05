@@ -94,11 +94,9 @@ public class ItemDrivenPickupScheduler {
     // ====== 启用/禁用控制 ======
 
     /**
-     * 启用物品驱动调度器（不需要实际启动全局任务）
+     * 启用物品驱动调度器
      */
-    public void enable() {
-        plugin.getLogger().info("物品驱动调度器已启用");
-    }
+    public void enable() {}
 
     /**
      * 禁用物品驱动调度器
