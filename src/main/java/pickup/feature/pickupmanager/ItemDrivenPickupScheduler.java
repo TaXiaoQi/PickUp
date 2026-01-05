@@ -15,9 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * 物品驱动拾取调度器（事件驱动版本）
- * 在物品生成时安排检测，物品被拾取后自动停止
- * 超时后转为玩家移动模式拾取
+ * 物品驱动拾取调度器
  */
 public class ItemDrivenPickupScheduler {
     private final Main plugin;
@@ -69,12 +67,6 @@ public class ItemDrivenPickupScheduler {
             // 检查是否已存在（防重复）
             if (!queue.contains(item)) {
                 queue.add(item);
-
-                if (plugin.getConfig().getBoolean("debug", false)) {
-                    plugin.getLogger().info("物品注册到调度器: " + item.getItemStack().getType() +
-                            " at " + item.getLocation() + " 队列大小: " + queue.size());
-                }
-
                 // 安排第一次检测（延迟5tick让物品稳定）
                 scheduleItemDetection(item, 5L);
             }
@@ -92,17 +84,8 @@ public class ItemDrivenPickupScheduler {
             World world = item.getWorld();
             Queue<Item> queue = worldItemQueues.get(world);
             if (queue != null) {
-                boolean removed = queue.remove(item);
-                if (removed && plugin.getConfig().getBoolean("debug", false)) {
-                    plugin.getLogger().info("物品从调度器移除: " + item.getItemStack().getType() +
-                            " 剩余队列大小: " + queue.size());
-                }
-
                 if (queue.isEmpty()) {
                     worldItemQueues.remove(world);
-                    if (plugin.getConfig().getBoolean("debug", false)) {
-                        plugin.getLogger().info("世界 " + world.getName() + " 的物品队列已清空");
-                    }
                 }
             }
         });
@@ -114,8 +97,7 @@ public class ItemDrivenPickupScheduler {
      * 启用物品驱动调度器（不需要实际启动全局任务）
      */
     public void enable() {
-        plugin.getLogger().info("物品驱动调度器已启用（事件驱动模式）");
-        // 不需要启动全局任务，由物品注册时自动安排检测
+        plugin.getLogger().info("物品驱动调度器已启用");
     }
 
     /**
@@ -156,10 +138,6 @@ public class ItemDrivenPickupScheduler {
 
                 // 检查物品是否还在活跃期内（使用配置文件时长）
                 if (!isItemActive(item)) {
-                    if (plugin.getConfig().getBoolean("debug", false)) {
-                        plugin.getLogger().info("物品 " + item.getItemStack().getType() +
-                                " 超出物品驱动活跃期，转为玩家移动模式拾取");
-                    }
                     unregisterItem(item);
                     return;
                 }
@@ -275,11 +253,6 @@ public class ItemDrivenPickupScheduler {
                     if (pickupExecutor.canPickupNow(player, item, false)) {
                         nearestPlayer = player;
                         nearestDistSq = distSq;
-
-                        if (plugin.getConfig().getBoolean("debug", false)) {
-                            plugin.getLogger().info("找到可拾取玩家: " + player.getName() +
-                                    " 距离: " + Math.sqrt(distSq));
-                        }
                     }
                 }
             }
@@ -314,10 +287,6 @@ public class ItemDrivenPickupScheduler {
                         nearestMob = mob;
                         nearestDistSq = distSq;
 
-                        if (plugin.getConfig().getBoolean("debug", false)) {
-                            plugin.getLogger().info("找到可拾取生物: " + mob.getName() +
-                                    " 距离: " + Math.sqrt(distSq));
-                        }
                     }
                 }
             }

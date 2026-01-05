@@ -17,7 +17,6 @@ import java.util.Set;
 
 /**
  * 物品生命周期管理器
- * 负责物品的标记、来源追踪、NBT数据管理等
  */
 public class ItemLifecycleManager {
     private final Main plugin;

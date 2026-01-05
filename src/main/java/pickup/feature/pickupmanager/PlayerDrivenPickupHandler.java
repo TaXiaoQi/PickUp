@@ -10,7 +10,6 @@ import java.util.Set;
 
 /**
  * 玩家驱动拾取处理器
- * 处理由玩家移动事件触发的拾取逻辑
  */
 public class PlayerDrivenPickupHandler {
     private final Main plugin;

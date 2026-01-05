@@ -14,7 +14,6 @@ import java.util.*;
 
 /**
  * 命令管理器 - 统一管理所有子命令
- * 使用插件主命令注册，支持自动Tab补全
  */
 public class CommandManager implements CommandExecutor, TabCompleter {
     private final Main plugin;
@@ -84,13 +83,11 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         }
 
         try {
-            // 执行子命令（传递剩余参数）
             String[] subArgs = Arrays.copyOfRange(args, 1, args.length);
             return handler.execute(sender, subArgs);
         } catch (Exception e) {
             sender.sendMessage("§c执行命令时出错: " + e.getMessage());
 
-            // 更可靠的日志记录，包含堆栈跟踪但不使用 printStackTrace()
             plugin.getLogger().log(java.util.logging.Level.SEVERE,
                     "执行命令时发生异常", e);
 
@@ -138,7 +135,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
     }
 
     /**
-     * 可Tab补全的子命令接口
+     * 可tab补全的子命令接口
      */
     public interface TabCompletableSubCommand extends SubCommand, TabCompleter {
     }

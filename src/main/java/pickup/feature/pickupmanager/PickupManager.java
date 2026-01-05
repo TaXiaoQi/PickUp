@@ -130,8 +130,6 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
 
             // 注册到调度器
             itemScheduler.registerItem(item);
-
-            plugin.getLogger().fine("物品已注册到调度器: " + item.getItemStack().getType());
         }, delayTicks);
     }
 

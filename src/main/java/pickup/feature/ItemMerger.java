@@ -17,8 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 /**
- * 自定义物品合并器 - Folia兼容版本
- * 保留事件驱动架构，优化线程安全问题
+ * 掉落物合并器
  */
 public class ItemMerger {
     private final JavaPlugin plugin;
@@ -56,10 +55,6 @@ public class ItemMerger {
     public void start() {
         if (running) return;
         running = true;
-
-        // Folia下不需要全局定时任务，完全事件驱动
-        plugin.getLogger().info("自定义物品合并器已启动（事件驱动模式）");
-        plugin.getLogger().info("扫描间隔: " + scanIntervalTicks + " ticks, 活跃期: " + activeDurationTicks + " ticks");
     }
 
     /**
@@ -85,9 +80,9 @@ public class ItemMerger {
         PersistentDataContainer pdc = item.getPersistentDataContainer();
         Long spawnTick = pdc.get(ItemLifecycleManager.SPAWN_TICK_KEY, PersistentDataType.LONG);
 
-        // 如果没有生成时间，使用当前游戏时间（修复：使用getGameTime()）
+        // 如果没有生成时间，使用当前游戏时间
         if (spawnTick == null) {
-            spawnTick = item.getWorld().getGameTime();  // 修复：使用getGameTime()
+            spawnTick = item.getWorld().getGameTime();
         }
 
         // 记录物品信息

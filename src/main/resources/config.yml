@@ -35,7 +35,7 @@ mode:
 
   # 物品主动检测拾取开关
   item-driven: true
-  # 主动检测时长 （单位：ticks）
+  # 主动检测时长 （单位：ticks，0为一直检测）
   item-active-duration: 60
   # 拾取检查频率（单位：ticks）
   item-check-interval: 2

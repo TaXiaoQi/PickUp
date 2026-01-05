@@ -15,7 +15,7 @@ import pickup.feature.pickupmanager.PickupManager;
 import org.bukkit.World;
 
 /**
- * PickUp插件主类 - 只负责初始化和生命周期管理
+ * 主类
  */
 public class Main extends JavaPlugin {
 
@@ -151,7 +151,7 @@ public class Main extends JavaPlugin {
     }
 
     /**
-     * 注册事件监听器 - 只在插件启用时注册一次
+     * 注册事件监听器
      */
     private void registerEventListener() {
         if (pickupEventListener != null) {
@@ -163,7 +163,7 @@ public class Main extends JavaPlugin {
     }
 
     /**
-     * 注销事件监听器 - 只在插件卸载时调用
+     * 注销事件监听器
      */
     private void unregisterEventListener() {
         if (pickupEventListener != null) {

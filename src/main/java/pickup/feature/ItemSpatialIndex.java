@@ -190,7 +190,6 @@ public class ItemSpatialIndex {
      * 清理无效物品（定期调用，防止内存泄漏）
      */
     public void cleanupInvalidItems() {
-        int cleaned = 0;
 
         for (World world : chunkIndex.keySet()) {
             Map<ChunkCoord, Set<Item>> worldChunks = chunkIndex.get(world);
@@ -215,7 +214,6 @@ public class ItemSpatialIndex {
                             }
                         }
 
-                        cleaned++;
                     }
                 }
 
@@ -227,10 +225,6 @@ public class ItemSpatialIndex {
             if (worldChunks.isEmpty()) {
                 chunkIndex.remove(world);
             }
-        }
-
-        if (cleaned > 0 && plugin.getConfig().getBoolean("debug", false)) {
-            plugin.getLogger().info("清理了 " + cleaned + " 个无效物品引用");
         }
     }
 
