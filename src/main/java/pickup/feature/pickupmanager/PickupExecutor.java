@@ -311,9 +311,15 @@ public class PickupExecutor {
             item.remove();
             itemIndex.unregisterItem(item);
 
-            // 同时从调度器移除
+            // 同时从调度器移除（如果物品驱动模式启用）
             if (config.isItemDrivenEnabled()) {
-                plugin.getPickupManager().getItemScheduler().unregisterItem(item);
+                // 通过插件主类获取拾取管理器
+                if (plugin.getPickupManager() != null) {
+                    ItemDrivenPickupScheduler scheduler = plugin.getPickupManager().getItemScheduler();
+                    if (scheduler != null) {
+                        scheduler.unregisterItem(item);
+                    }
+                }
             }
         }
     }

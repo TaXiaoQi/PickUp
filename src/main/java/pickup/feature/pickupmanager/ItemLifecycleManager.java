@@ -1,3 +1,4 @@
+
 package pickup.feature.pickupmanager;
 
 import org.bukkit.*;
@@ -9,7 +10,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import pickup.Main;
 import pickup.feature.ItemSpatialIndex;
-import pickup.feature.CustomItemMerger;
+import pickup.feature.ItemMerger;
 
 import java.util.List;
 import java.util.Set;
@@ -64,7 +65,7 @@ public class ItemLifecycleManager {
         // 设置来源标记（默认为自然掉落）
         pdc.set(SOURCE_KEY, PersistentDataType.STRING, ItemSourceType.NATURAL_DROP.name());
 
-        // 设置生成时间
+        // 设置生成时间 - 使用getGameTime()
         pdc.set(SPAWN_TICK_KEY, PersistentDataType.LONG, item.getWorld().getGameTime());
 
         // 禁用原版拾取逻辑
@@ -157,7 +158,7 @@ public class ItemLifecycleManager {
     /**
      * 清理单个物品
      */
-    private void cleanupSingleItem(Item item) {
+    public void cleanupSingleItem(Item item) {
         if (item == null || !item.isValid() || item.isDead()) {
             return;
         }
@@ -174,6 +175,14 @@ public class ItemLifecycleManager {
             if (!stack.getType().isAir()) {
                 ItemStack cleanStack = createCleanStack(stack);
                 item.setItemStack(cleanStack);
+            }
+
+            // 从空间索引移除
+            itemIndex.unregisterItem(item);
+
+            // 从调度器移除
+            if (plugin.getPickupManager() != null && plugin.getPickupManager().getItemScheduler() != null) {
+                plugin.getPickupManager().getItemScheduler().unregisterItem(item);
             }
         } catch (Exception e) {
             plugin.getLogger().warning("清理物品失败: " + e.getMessage());
@@ -267,6 +276,37 @@ public class ItemLifecycleManager {
 
     }
 
+    // ====== 新增：物品彻底清理方法 ======
+
+    /**
+     * 彻底清理物品（从所有系统中移除）
+     */
+    public void cleanupItemCompletely(Item item) {
+        if (item == null) return;
+
+        // 1. 从空间索引移除
+        itemIndex.unregisterItem(item);
+
+        // 2. 从调度器队列移除
+        if (plugin.getPickupManager() != null) {
+            ItemDrivenPickupScheduler scheduler = plugin.getPickupManager().getItemScheduler();
+            if (scheduler != null) {
+                scheduler.unregisterItem(item);
+            }
+        }
+
+        // 3. 清除PDC标记（可选）
+        try {
+            PersistentDataContainer pdc = item.getPersistentDataContainer();
+            pdc.remove(SPAWN_TICK_KEY);
+            pdc.remove(DROPPED_BY_KEY);
+            pdc.remove(SOURCE_KEY);
+            pdc.remove(INITIALIZED_KEY);
+        } catch (Exception e) {
+            // 忽略清理异常
+        }
+    }
+
     // ====== 私有方法 ======
 
     private void disableVanillaPickup(Item item) {
@@ -291,7 +331,7 @@ public class ItemLifecycleManager {
     }
 
     private void notifyMerger(Item item) {
-        CustomItemMerger merger = plugin.getItemMerger();
+        ItemMerger merger = plugin.getItemMerger();
         if (merger != null) {
             merger.notifyItemReady(item);
         }

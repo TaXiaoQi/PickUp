@@ -50,10 +50,18 @@ public class ItemDrivenPickupScheduler {
      * 注册物品到调度器队列
      */
     public void registerItem(Item item) {
-        if (!item.isValid() || item.isDead()) return;
+        if (!item.isValid() || item.isDead()) {
+            plugin.getLogger().fine("尝试注册无效物品，跳过");
+            return;
+        }
 
         World world = item.getWorld();
         worldItemQueues.computeIfAbsent(world, w -> new ConcurrentLinkedQueue<>()).add(item);
+
+        if (plugin.getConfig().getBoolean("debug", false)) {
+            plugin.getLogger().info("物品注册到调度器: " + item.getItemStack().getType() +
+                    " at " + item.getLocation());
+        }
     }
 
     /**
@@ -65,7 +73,11 @@ public class ItemDrivenPickupScheduler {
         World world = item.getWorld();
         Queue<Item> queue = worldItemQueues.get(world);
         if (queue != null) {
-            queue.remove(item);
+            boolean removed = queue.remove(item);
+            if (removed && plugin.getConfig().getBoolean("debug", false)) {
+                plugin.getLogger().info("物品从调度器移除: " + item.getItemStack().getType());
+            }
+
             if (queue.isEmpty()) {
                 worldItemQueues.remove(world);
             }
@@ -77,6 +89,7 @@ public class ItemDrivenPickupScheduler {
     public void enable() {
         if (active) return;
         active = true;
+        plugin.getLogger().info("物品驱动调度器已启用");
         startGlobalScanTask();
     }
 
@@ -90,6 +103,7 @@ public class ItemDrivenPickupScheduler {
         }
 
         worldItemQueues.clear();
+        plugin.getLogger().info("物品驱动调度器已禁用");
     }
 
     public boolean isActive() {
@@ -104,6 +118,8 @@ public class ItemDrivenPickupScheduler {
     private void startGlobalScanTask() {
         // 使用配置文件中的 item-check-interval
         int checkInterval = config.getPickupAttemptIntervalTicks(); // 这是 item-check-interval
+
+        plugin.getLogger().info("启动全局扫描任务，间隔: " + checkInterval + " ticks");
 
         globalScanTask = globalScheduler.runAtFixedRate(plugin, task -> {
             if (!active) {
@@ -124,6 +140,10 @@ public class ItemDrivenPickupScheduler {
                     int itemsPerScan = 20; // 固定值，因为配置中没有 items-per-scan
                     int itemsToProcess = Math.min(itemsPerScan, queue.size());
 
+                    if (plugin.getConfig().getBoolean("debug", false) && itemsToProcess > 0) {
+                        plugin.getLogger().info("世界 " + world.getName() + " 扫描 " + itemsToProcess + " 个物品");
+                    }
+
                     for (int i = 0; i < itemsToProcess; i++) {
                         Item item = queue.poll();
                         if (item == null) break;
@@ -142,6 +162,7 @@ public class ItemDrivenPickupScheduler {
                 }
             } catch (Exception e) {
                 plugin.getLogger().severe("Error in item scan task: " + e.getMessage());
+                e.printStackTrace();
             }
         }, 1, checkInterval);
     }
@@ -183,6 +204,7 @@ public class ItemDrivenPickupScheduler {
                 }
             } catch (Exception e) {
                 plugin.getLogger().warning("Error processing item in region: " + e.getMessage());
+                e.printStackTrace();
             }
         });
     }
@@ -206,8 +228,8 @@ public class ItemDrivenPickupScheduler {
             return false; // 如果没有生成时间，认为不活跃
         }
 
-        // 使用 getFullTime() 而不是 getGameTime()
-        long currentTick = item.getWorld().getFullTime();
+        // 修复：统一使用 getGameTime() 而不是 getFullTime()
+        long currentTick = item.getWorld().getGameTime();
         long activeTicks = config.getActiveDetectionTicks();
 
         // 如果 activeTicks 为0，表示永久活跃
@@ -219,10 +241,11 @@ public class ItemDrivenPickupScheduler {
         boolean isActive = (currentTick - spawnTick) <= activeTicks;
 
         // 调试日志（可选）
-        if (plugin.getConfig().getBoolean("debug", false) && !isActive) {
+        if (plugin.getConfig().getBoolean("debug", false)) {
             plugin.getLogger().info(String.format(
-                    "物品活跃期检查: 当前=%d, 生成=%d, 活跃期=%d, 差值=%d, 活跃=%s",
-                    currentTick, spawnTick, activeTicks, (currentTick - spawnTick), false
+                    "物品活跃期检查: 物品=%s, 当前=%d, 生成=%d, 活跃期=%d, 差值=%d, 活跃=%s",
+                    item.getItemStack().getType(),
+                    currentTick, spawnTick, activeTicks, (currentTick - spawnTick), isActive
             ));
         }
 
@@ -262,6 +285,11 @@ public class ItemDrivenPickupScheduler {
             if (pickupExecutor.canPickupNow(livingEntity, item, false)) {
                 nearestPicker = livingEntity;
                 nearestDistSq = distSq;
+
+                if (plugin.getConfig().getBoolean("debug", false)) {
+                    plugin.getLogger().info("找到可拾取者: " + livingEntity.getName() +
+                            " 距离: " + Math.sqrt(distSq));
+                }
             }
         }
 
@@ -275,9 +303,8 @@ public class ItemDrivenPickupScheduler {
 
         // 1. 检查玩家
         if (entity instanceof Player player) {
-            // 旁观模式不能拾取
+            // 简化检查：只要不是旁观模式且活着
             return player.getGameMode() != GameMode.SPECTATOR &&
-                    player.isOnline() &&
                     !player.isDead();
         }
 
@@ -289,7 +316,7 @@ public class ItemDrivenPickupScheduler {
                     mob.getHealth() > 0;
         }
 
-        // 4. 默认不允许拾取
+        // 默认不允许拾取
         return false;
     }
 }

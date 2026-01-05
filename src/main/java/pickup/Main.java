@@ -6,6 +6,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.util.Objects;
 
+import pickup.command.CommandManager;
+import pickup.command.McCommand;
 import pickup.config.PickupConfig;
 import pickup.feature.*;
 import pickup.event.*;
@@ -19,7 +21,7 @@ public class Main extends JavaPlugin {
 
     // 管理器实例
     private PickupManager pickupManager;
-    private CustomItemMerger itemMerger;
+    private ItemMerger itemMerger;
     private PickupConfig pickupConfig;
     private PickupEvent pickupEventListener;
     public ItemSpatialIndex itemSpatialIndex;
@@ -128,7 +130,7 @@ public class Main extends JavaPlugin {
 
         // 3. 创建物品合并器
         if (pickupConfig.isItemMergeEnabled()) {
-            this.itemMerger = new CustomItemMerger(this,
+            this.itemMerger = new ItemMerger(this,
                     pickupConfig.getItemMergeRange(),
                     pickupConfig.getItemMergeActiveDurationTicks(),
                     pickupConfig.getItemMergeScanIntervalTicks());
@@ -220,7 +222,7 @@ public class Main extends JavaPlugin {
 
         // 5. 重新初始化物品合并器
         if (pickupConfig.isItemMergeEnabled()) {
-            this.itemMerger = new CustomItemMerger(this,
+            this.itemMerger = new ItemMerger(this,
                     pickupConfig.getItemMergeRange(),
                     pickupConfig.getItemMergeActiveDurationTicks(),
                     pickupConfig.getItemMergeScanIntervalTicks());
@@ -285,9 +287,21 @@ public class Main extends JavaPlugin {
      * 注册命令处理器
      */
     private void registerCommands() {
-        ReloadCommand configCommand = new ReloadCommand(this);
-        Objects.requireNonNull(getCommand("pickup")).setExecutor(configCommand);
-        Objects.requireNonNull(getCommand("mc")).setExecutor(configCommand);
+        // 注册 /up 和 /pickup 命令（使用新的CommandManager）
+        CommandManager commandManager = new CommandManager(this);
+
+        // 注册主命令
+        Objects.requireNonNull(getCommand("pickup")).setExecutor(commandManager);
+        Objects.requireNonNull(getCommand("pickup")).setTabCompleter(commandManager);
+
+        // 注册别名
+        Objects.requireNonNull(getCommand("up")).setExecutor(commandManager);
+        Objects.requireNonNull(getCommand("up")).setTabCompleter(commandManager);
+
+        // 单独注册 /mc 命令
+        McCommand mcCommand = new McCommand(this);
+        Objects.requireNonNull(getCommand("mc")).setExecutor(mcCommand);
+        Objects.requireNonNull(getCommand("mc")).setTabCompleter(mcCommand);
     }
 
     /**
@@ -300,7 +314,7 @@ public class Main extends JavaPlugin {
     // ========== Getter 方法 ==========
     public boolean isStoppedByCommand() { return stoppedByCommand; }
     public PickupConfig getPickupConfig() { return pickupConfig; }
-    public CustomItemMerger getItemMerger() { return itemMerger; }
+    public ItemMerger getItemMerger() { return itemMerger; }
     public ItemSpatialIndex getItemSpatialIndex() { return this.itemSpatialIndex; }
     public PickupManager getPickupManager() { return pickupManager; }
 }

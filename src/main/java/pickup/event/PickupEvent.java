@@ -248,6 +248,7 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerMove(PlayerMoveEvent event) {
+        // 第一层：基础条件检查
         if (!plugin.isEnabled() || plugin.isPickupDisabled() || !config.isPlayerDriven()) {
             return;
         }
@@ -257,30 +258,28 @@ public class PickupEvent implements Listener {
             return;
         }
 
-        PickupManager manager = getPickupManager();
-        if (manager == null) return;
-
-        // 如果当前世界没有可拾取的物品，直接跳过后续所有逻辑
-        if (!manager.hasPickupableItems(player.getWorld())) {
+        // 第二层：移动距离检查（最轻量的检查）
+        double minMoveDistance = config.getPlayerMinMoveDistance();
+        double minMoveDistanceSq = minMoveDistance * minMoveDistance;
+        if (event.getFrom().distanceSquared(event.getTo()) <= minMoveDistanceSq) {
             return;
         }
 
-        // ====== 移动距离检查 ======
-        double minMoveDistance = config.getPlayerMinMoveDistance();
-        double minMoveDistanceSq = minMoveDistance * minMoveDistance;
-
-        if (event.getFrom().distanceSquared(event.getTo()) > minMoveDistanceSq) {
-            manager.tryPickup(player);
-        }
-
-        // ====== 新增：时间间隔控制 ======
+        // 第三层：时间间隔检查
         UUID playerId = player.getUniqueId();
         long currentTick = player.getWorld().getFullTime();
         long lastCheck = lastCheckTicks.getOrDefault(playerId, 0L);
         int checkInterval = config.getPlayerMoveCheckIntervalTicks();
-
-        // 检查是否达到时间间隔
         if ((currentTick - lastCheck) < checkInterval) {
+            return;
+        }
+
+        PickupManager manager = getPickupManager();
+        if (manager == null) return;
+
+        // 第四层：世界物品检查（在时间和距离都满足后才检查）
+        if (!manager.hasPickupableItems(player.getWorld())) {
+            lastCheckTicks.remove(playerId); // 清空记录，避免重复计算
             return;
         }
 

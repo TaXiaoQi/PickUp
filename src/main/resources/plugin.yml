@@ -17,6 +17,8 @@ commands:
       /<command> set <key> <value> - 动态设置配置项
       /<command> get <key> - 获取配置值
       /<command> list - 列出所有配置项
+      /<command> save - 立即保存配置
+      /<command> help - 显示帮助信息
     aliases: [Pickup, pickup]
     permission: pickup.admin
     permission-message: §c你没有权限使用此命令！
@@ -25,6 +27,21 @@ commands:
     usage: /<command> restart
     permission: pickup.admin
     permission-message: §c你没有权限使用此命令！
+
+# 子命令注册，增强Tab补全
+command-nodes:
+  up:
+    children:
+      reload: true
+      true: true
+      false: true
+      status: true
+      set: {}
+      get: {}
+      list: true
+      save: true
+      help: true
+
 permissions:
   pickup.admin:
     description: 允许管理拾取插件

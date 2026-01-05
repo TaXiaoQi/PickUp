@@ -20,7 +20,7 @@ import java.util.logging.Level;
  * 自定义物品合并器 - Folia兼容版本
  * 保留事件驱动架构，优化线程安全问题
  */
-public class CustomItemMerger {
+public class ItemMerger {
     private final JavaPlugin plugin;
     private final double mergeRange;
     private final int activeDurationTicks;
@@ -42,8 +42,8 @@ public class CustomItemMerger {
     /**
      * 构造函数
      */
-    public CustomItemMerger(JavaPlugin plugin, double mergeRange,
-                            int activeDurationTicks, int scanIntervalTicks) {
+    public ItemMerger(JavaPlugin plugin, double mergeRange,
+                      int activeDurationTicks, int scanIntervalTicks) {
         this.plugin = Objects.requireNonNull(plugin, "plugin cannot be null");
         this.mergeRange = Math.max(0.1, mergeRange);
         this.activeDurationTicks = Math.max(0, activeDurationTicks);
@@ -85,9 +85,9 @@ public class CustomItemMerger {
         PersistentDataContainer pdc = item.getPersistentDataContainer();
         Long spawnTick = pdc.get(ItemLifecycleManager.SPAWN_TICK_KEY, PersistentDataType.LONG);
 
-        // 如果没有生成时间，使用当前时间（作为备用）
+        // 如果没有生成时间，使用当前游戏时间（修复：使用getGameTime()）
         if (spawnTick == null) {
-            spawnTick = item.getWorld().getFullTime();
+            spawnTick = item.getWorld().getGameTime();  // 修复：使用getGameTime()
         }
 
         // 记录物品信息
@@ -126,7 +126,7 @@ public class CustomItemMerger {
                 ItemData data = worldMergeData.getItemData(item.getUniqueId());
                 if (data == null) return;
 
-                long currentTick = item.getWorld().getFullTime();
+                long currentTick = item.getWorld().getGameTime();  // 修复：使用getGameTime()
                 if (currentTick - data.spawnTick >= activeDurationTicks) {
                     // 超过活跃期，移除
                     worldMergeData.removeItem(item.getUniqueId());
@@ -289,6 +289,9 @@ public class CustomItemMerger {
             if (index != null) {
                 index.unregisterItem(remove);
             }
+
+            // 修复：同时从调度器队列中移除
+            pickupPlugin.getPickupManager().getItemScheduler().unregisterItem(remove);
         }
     }
 

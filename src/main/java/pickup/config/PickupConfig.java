@@ -111,13 +111,13 @@ public class PickupConfig {
 
         // 拾取配置
         this.pickupRange = Math.max(0.1, Math.min(10.0, config.getDouble("pickup.range", 1.5)));
-        this.selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 5));
+        this.selfImmuneTicks = Math.max(0, config.getInt("pickup.self-immune-ticks", 10));
         this.offhandPickupEnabled = config.getBoolean("pickup.offhand-pickup", false);
         this.playerMinMoveDistance = Math.max(0.0, config.getDouble("mode.player-min-move-distance", 0.25));
 
         // 延迟配置
-        this.playerDropDelayTicks = Math.max(0, config.getInt("pickup.delays.player-drop", 15));
-        this.naturalDropDelayTicks = Math.max(0, config.getInt("pickup.delays.natural-drop", 10));
+        this.playerDropDelayTicks = Math.max(0, config.getInt("pickup.delays.player-drop", 30));
+        this.naturalDropDelayTicks = Math.max(0, config.getInt("pickup.delays.natural-drop", 15));
         this.instantPickupDelayTicks = Math.max(0, config.getInt("pickup.delays.instant-pickup", 0));
 
         // 死亡日志配置
@@ -355,6 +355,9 @@ public class PickupConfig {
                     break;
                 case "mode.player-move-check-interval":
                     this.playerMoveCheckIntervalTicks = getIntValue(value);
+                    break;
+                case "pickup.self-immune-ticks":
+                    this.selfImmuneTicks = getIntValue(value);
                     break;
             }
         } catch (Exception e) {
