@@ -269,22 +269,18 @@ public class ItemDrivenPickupScheduler {
         double nearestDistSq = Double.MAX_VALUE;
 
         for (Player player : nearbyPlayers) {
-            if (!isEligiblePicker(player)) {
-                continue;
-            }
+            if (isEligiblePicker(player)) { // 修复：直接调用，不反转
+                double distSq = player.getLocation().distanceSquared(loc);
+                if (distSq <= range * range && distSq < nearestDistSq) { // 修复：优化条件
+                    if (pickupExecutor.canPickupNow(player, item, false)) {
+                        nearestPlayer = player;
+                        nearestDistSq = distSq;
 
-            double distSq = player.getLocation().distanceSquared(loc);
-            if (distSq > range * range || distSq >= nearestDistSq) {
-                continue;
-            }
-
-            if (pickupExecutor.canPickupNow(player, item, false)) {
-                nearestPlayer = player;
-                nearestDistSq = distSq;
-
-                if (plugin.getConfig().getBoolean("debug", false)) {
-                    plugin.getLogger().info("找到可拾取玩家: " + player.getName() +
-                            " 距离: " + Math.sqrt(distSq));
+                        if (plugin.getConfig().getBoolean("debug", false)) {
+                            plugin.getLogger().info("找到可拾取玩家: " + player.getName() +
+                                    " 距离: " + Math.sqrt(distSq));
+                        }
+                    }
                 }
             }
         }
@@ -309,29 +305,20 @@ public class ItemDrivenPickupScheduler {
 
         // 获取范围内的所有实体
         for (Entity entity : loc.getWorld().getNearbyEntities(loc, range, range, range)) {
-            if (!(entity instanceof Mob mob)) {
-                continue;
-            }
+            if (entity instanceof Mob mob && isEligiblePicker(mob)) { // 修复：直接调用，不反转
+                // 计算距离
+                double distSq = mob.getLocation().distanceSquared(loc);
+                if (distSq <= rangeSq && distSq < nearestDistSq) { // 修复：优化条件
+                    // 检查是否可以拾取
+                    if (pickupExecutor.canPickupNow(mob, item, false)) {
+                        nearestMob = mob;
+                        nearestDistSq = distSq;
 
-            // 检查是否是合格的拾取者
-            if (!isEligiblePicker(mob)) {
-                continue;
-            }
-
-            // 计算距离
-            double distSq = mob.getLocation().distanceSquared(loc);
-            if (distSq > rangeSq || distSq >= nearestDistSq) {
-                continue;
-            }
-
-            // 检查是否可以拾取
-            if (pickupExecutor.canPickupNow(mob, item, false)) {
-                nearestMob = mob;
-                nearestDistSq = distSq;
-
-                if (plugin.getConfig().getBoolean("debug", false)) {
-                    plugin.getLogger().info("找到可拾取生物: " + mob.getName() +
-                            " 距离: " + Math.sqrt(distSq));
+                        if (plugin.getConfig().getBoolean("debug", false)) {
+                            plugin.getLogger().info("找到可拾取生物: " + mob.getName() +
+                                    " 距离: " + Math.sqrt(distSq));
+                        }
+                    }
                 }
             }
         }
@@ -349,38 +336,16 @@ public class ItemDrivenPickupScheduler {
 
         // 1. 检查玩家
         if (entity instanceof Player player) {
-            return player.getGameMode() != GameMode.SPECTATOR &&
-                    !player.isDead();
+            return player.getGameMode() != GameMode.SPECTATOR && !player.isDead();
         }
 
         // 2. 检查生物（Mob）
         if (entity instanceof Mob mob) {
-            return mob.getCanPickupItems() &&
-                    !mob.isDead() &&
-                    mob.getHealth() > 0;
+            return mob.getCanPickupItems() && !mob.isDead() && mob.getHealth() > 0;
         }
 
         // 默认不允许拾取
         return false;
     }
 
-    // ====== 统计方法 ======
-
-    /**
-     * 获取总队列物品数
-     */
-    public int getTotalQueuedItems() {
-        int total = 0;
-        for (Queue<Item> queue : worldItemQueues.values()) {
-            total += queue.size();
-        }
-        return total;
-    }
-
-    /**
-     * 获取世界队列数量
-     */
-    public int getWorldQueueCount() {
-        return worldItemQueues.size();
-    }
 }
