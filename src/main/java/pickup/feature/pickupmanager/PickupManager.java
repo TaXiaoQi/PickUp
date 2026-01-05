@@ -6,6 +6,8 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
 import pickup.Main;
 import pickup.config.PickupConfig;
 import pickup.feature.ItemSpatialIndex;
@@ -110,6 +112,31 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         }
     }
 
+    // 延迟注册
+    public void scheduleItemRegistration(Item item, long delayTicks) {
+        if (!config.isItemDrivenEnabled()) {
+            return;
+        }
+
+        plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
+            if (!item.isValid() || item.isDead()) {
+                return;
+            }
+
+            // 检查物品是否已初始化
+            PersistentDataContainer pdc = item.getPersistentDataContainer();
+            Byte initialized = pdc.get(ItemLifecycleManager.INITIALIZED_KEY, PersistentDataType.BYTE);
+            if (initialized == null || initialized == 0) {
+                return; // 未初始化的物品不注册
+            }
+
+            // 注册到调度器
+            itemScheduler.registerItem(item);
+
+            plugin.getLogger().fine("物品已注册到调度器: " + item.getItemStack().getType());
+        }, delayTicks);
+    }
+
     // ====== 公共入口：由 PickupEvent 调用 ======
 
     /**
@@ -118,13 +145,11 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
     public void handleItemSpawn(ItemSpawnEvent event) {
         Item item = event.getEntity();
 
-        // 直接处理物品生命周期（此时物品应该已经完全初始化）
+        // 生命周期管理
         lifecycleManager.handleItemSpawn(item);
 
-        // 注册到物品驱动调度器（如果启用）
-        if (config.isItemDrivenEnabled()) {
-            itemScheduler.registerItem(item);
-        }
+        // 延迟注册到调度器（确保物品完全初始化）
+        scheduleItemRegistration(item, 5L); // 延迟5tick
     }
 
     /**

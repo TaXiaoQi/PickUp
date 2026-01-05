@@ -168,8 +168,16 @@ public class ItemDrivenPickupScheduler {
 
                 // 查找最近的拾取者
                 LivingEntity nearestPicker = findNearestPicker(item);
+                if (nearestPicker == null) {
+                    return; // 没有可拾取者
+                }
+
+                // 执行拾取
                 if (nearestPicker instanceof Player player) {
-                    pickupExecutor.performPlayerPickup(player, item);// 拾取成功，不需要继续处理
+                    // 检查玩家是否可以拾取
+                    if (pickupExecutor.canPickupNow(player, item, false)) {
+                        pickupExecutor.performPlayerPickup(player, item);
+                    }
                 } else {
                     pickupExecutor.performLivingEntityPickup(nearestPicker, item);
                 }
@@ -180,51 +188,108 @@ public class ItemDrivenPickupScheduler {
     }
 
     private boolean isItemActive(Item item) {
-        PersistentDataContainer pdc = item.getPersistentDataContainer();
-
-        // 首先检查是否已初始化
-        Byte initialized = pdc.get(ItemLifecycleManager.INITIALIZED_KEY, PersistentDataType.BYTE);
-        if (initialized == null || initialized == 0) {
-            return false; // 未初始化的物品不应被处理
+        if (!item.isValid() || item.isDead()) {
+            return false;
         }
 
-        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
-        if (spawnTick == null) return true;
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
 
-        long currentTick = item.getWorld().getGameTime();
-        return currentTick - spawnTick <= config.getActiveDetectionTicks();
+        // 检查是否已初始化
+        Byte initialized = pdc.get(ItemLifecycleManager.INITIALIZED_KEY, PersistentDataType.BYTE);
+        if (initialized == null || initialized == 0) {
+            return false;
+        }
+
+        // 检查生成时间
+        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
+        if (spawnTick == null) {
+            return false; // 如果没有生成时间，认为不活跃
+        }
+
+        // 使用 getFullTime() 而不是 getGameTime()
+        long currentTick = item.getWorld().getFullTime();
+        long activeTicks = config.getActiveDetectionTicks();
+
+        // 如果 activeTicks 为0，表示永久活跃
+        if (activeTicks <= 0) {
+            return true;
+        }
+
+        // 检查是否在活跃期内
+        boolean isActive = (currentTick - spawnTick) <= activeTicks;
+
+        // 调试日志（可选）
+        if (plugin.getConfig().getBoolean("debug", false) && !isActive) {
+            plugin.getLogger().info(String.format(
+                    "物品活跃期检查: 当前=%d, 生成=%d, 活跃期=%d, 差值=%d, 活跃=%s",
+                    currentTick, spawnTick, activeTicks, (currentTick - spawnTick), false
+            ));
+        }
+
+        return isActive;
     }
 
     private LivingEntity findNearestPicker(Item item) {
+        if (!item.isValid() || item.isDead()) {
+            return null;
+        }
+
         Location loc = item.getLocation();
-        double range = config.getPickupRange(); // 这是 pickup.range
+        double range = config.getPickupRange();
         double rangeSq = range * range;
 
         LivingEntity nearestPicker = null;
         double nearestDistSq = Double.MAX_VALUE;
 
+        // 获取范围内的所有实体
         for (Entity entity : loc.getWorld().getNearbyEntities(loc, range, range, range)) {
-            if (!(entity instanceof LivingEntity livingEntity)) continue;
+            if (!(entity instanceof LivingEntity livingEntity)) {
+                continue;
+            }
 
-            if (!isEligiblePicker(livingEntity)) continue;
+            // 检查是否是合格的拾取者
+            if (!isEligiblePicker(livingEntity)) {
+                continue;
+            }
 
+            // 计算距离
             double distSq = livingEntity.getLocation().distanceSquared(loc);
-            if (distSq > rangeSq || distSq >= nearestDistSq) continue;
+            if (distSq > rangeSq || distSq >= nearestDistSq) {
+                continue;
+            }
 
-            nearestPicker = livingEntity;
-            nearestDistSq = distSq;
+            // 检查拾取者是否可以拾取（使用pickupExecutor）
+            if (pickupExecutor.canPickupNow(livingEntity, item, false)) {
+                nearestPicker = livingEntity;
+                nearestDistSq = distSq;
+            }
         }
 
         return nearestPicker;
     }
 
     private boolean isEligiblePicker(LivingEntity entity) {
+        if (entity == null || !entity.isValid()) {
+            return false;
+        }
+
+        // 1. 检查玩家
         if (entity instanceof Player player) {
-            return player.getGameMode() != GameMode.SPECTATOR;
+            // 旁观模式不能拾取
+            return player.getGameMode() != GameMode.SPECTATOR &&
+                    player.isOnline() &&
+                    !player.isDead();
         }
+
+        // 2. 检查生物（Mob）
         if (entity instanceof Mob mob) {
-            return mob.getCanPickupItems();
+            // 只有可以拾取物品的生物才能拾取
+            return mob.getCanPickupItems() &&
+                    !mob.isDead() &&
+                    mob.getHealth() > 0;
         }
+
+        // 4. 默认不允许拾取
         return false;
     }
 }

@@ -74,14 +74,27 @@ public class PickupConfig {
      * 重新加载配置
      */
     public void reload() {
-        plugin.saveDefaultConfig();
-        plugin.reloadConfig();
-        this.config = plugin.getConfig();
-        loadAllFields();
+        try {
+            // 1. 取消任何待定的保存任务
+            cancelDelayedSave();
 
-        // 取消任何待定的保存任务
-        cancelDelayedSave();
-        pendingChanges.clear();
+            // 2. 清空待保存队列（放弃未保存的修改）
+            pendingChanges.clear();
+
+            // 3. 重新从磁盘加载配置
+            plugin.saveDefaultConfig();
+            plugin.reloadConfig();
+            this.config = plugin.getConfig();
+
+            // 4. 重新加载所有字段
+            loadAllFields();
+
+            plugin.getLogger().info("配置已从磁盘重新加载");
+
+        } catch (Exception e) {
+            plugin.getLogger().severe("重载配置失败: " + e.getMessage());
+            throw e;
+        }
     }
 
     /**
@@ -175,7 +188,7 @@ public class PickupConfig {
         }
 
         try {
-            // 1. 将所有待定更改应用到配置对象（虽然已经在setConfig时应用过，但这里再确认一次）
+            // 1. 将所有待定更改应用到配置对象
             for (Map.Entry<String, Object> entry : pendingChanges.entrySet()) {
                 config.set(entry.getKey(), entry.getValue());
             }
@@ -187,7 +200,7 @@ public class PickupConfig {
             int savedCount = pendingChanges.size();
             pendingChanges.clear();
 
-            // 4. 取消延迟保存任务
+            // 4. 安全取消延迟保存任务
             cancelDelayedSave();
 
             plugin.getLogger().info("配置已保存到磁盘 (" + savedCount + " 个更改)");
@@ -205,17 +218,25 @@ public class PickupConfig {
         // 取消现有的任务（如果有）
         cancelDelayedSave();
 
-        // 创建新的延迟保存任务
-        delayedSaveTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                saveNow();
-            }
-        };
+        try {
+            // 创建新的延迟保存任务
+            delayedSaveTask = new BukkitRunnable() {
+                @Override
+                public void run() {
+                    saveNow();
+                }
+            };
 
-        // 延迟SAVE_DELAY_TICKS后执行
-        delayedSaveTask.runTaskLater(plugin, SAVE_DELAY_TICKS);
-        plugin.getLogger().fine("延迟保存任务已安排，将在 " + (SAVE_DELAY_TICKS / 20) + " 秒后执行");
+            // 延迟SAVE_DELAY_TICKS后执行
+            delayedSaveTask.runTaskLater(plugin, SAVE_DELAY_TICKS);
+
+            if (plugin.getLogger().isLoggable(java.util.logging.Level.FINE)) {
+                plugin.getLogger().fine("延迟保存任务已安排，将在 " + (SAVE_DELAY_TICKS / 20) + " 秒后执行");
+            }
+        } catch (Exception e) {
+            plugin.getLogger().warning("安排延迟保存任务失败: " + e.getMessage());
+            delayedSaveTask = null;
+        }
     }
 
     /**
@@ -223,8 +244,17 @@ public class PickupConfig {
      */
     private void cancelDelayedSave() {
         if (delayedSaveTask != null) {
-            delayedSaveTask.cancel();
-            delayedSaveTask = null;
+            try {
+                // 使用try-catch确保不会抛出异常
+                delayedSaveTask.cancel();
+            } catch (Exception e) {
+                // 记录警告但继续执行
+                if (plugin != null) {
+                    plugin.getLogger().warning("取消延迟保存任务失败: " + e.getMessage());
+                }
+            } finally {
+                delayedSaveTask = null;
+            }
         }
     }
 

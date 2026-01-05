@@ -10,6 +10,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import pickup.Main;
+import pickup.feature.pickupmanager.ItemLifecycleManager;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -80,11 +81,20 @@ public class CustomItemMerger {
         if (BLACKLISTED.contains(stack.getType())) return;
         if (stack.getAmount() >= stack.getMaxStackSize()) return;
 
+        // 从物品的 PDC 中获取实际的生成时间
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
+        Long spawnTick = pdc.get(ItemLifecycleManager.SPAWN_TICK_KEY, PersistentDataType.LONG);
+
+        // 如果没有生成时间，使用当前时间（作为备用）
+        if (spawnTick == null) {
+            spawnTick = item.getWorld().getFullTime();
+        }
+
         // 记录物品信息
         ItemData data = new ItemData(
                 item.getUniqueId(),
                 item.getLocation().clone(),
-                item.getWorld().getFullTime()
+                spawnTick  // 使用从 PDC 获取的时间
         );
 
         // 添加到对应世界的数据中
@@ -175,21 +185,63 @@ public class CustomItemMerger {
             }
         }
 
-        // 寻找可合并的目标
+        if (nearby.isEmpty()) return;
+
+        // 确定哪个物品是最早生成的（包括source自身）
+        Item oldestItem = source;
+        PersistentDataContainer sourcePdc = source.getPersistentDataContainer();
+        NamespacedKey spawnTickKey = ItemLifecycleManager.SPAWN_TICK_KEY;
+        long oldestSpawnTick = sourcePdc.getOrDefault(spawnTickKey, PersistentDataType.LONG, 0L);
+
+        // 先找出最早生成的物品
         for (Item target : nearby) {
             if (target == source) continue;
 
-            if (canMerge(source, target)) {
-                performMerge(source, target);
+            PersistentDataContainer targetPdc = target.getPersistentDataContainer();
+            long targetSpawnTick = targetPdc.getOrDefault(spawnTickKey, PersistentDataType.LONG, 0L);
 
-                // 从数据中移除被合并的物品
-                String worldName = world.getName();
-                WorldMergeData worldMergeData = worldData.get(worldName);
-                if (worldMergeData != null) {
-                    worldMergeData.removeItem(target.getUniqueId());
+            if (targetSpawnTick < oldestSpawnTick) {
+                oldestItem = target;
+                oldestSpawnTick = targetSpawnTick;
+            }
+        }
+
+        // 将所有可合并的物品合并到最早物品中
+        for (Item target : nearby) {
+            if (target == oldestItem) continue;
+
+            if (canMerge(oldestItem, target)) {
+                // 执行合并（老物品合并到更老的物品）
+                if (oldestItem == source) {
+                    // source就是最老的，其他合并到source
+                    performMerge(source, target);
+                    // 从数据中移除被合并的物品
+                    String worldName = world.getName();
+                    WorldMergeData worldMergeData = worldData.get(worldName);
+                    if (worldMergeData != null) {
+                        worldMergeData.removeItem(target.getUniqueId());
+                    }
+                } else if (target == source) {
+                    // source不是最老的，source合并到最老的
+                    performMerge(oldestItem, source);
+                    // 从数据中移除被合并的物品（source）
+                    String worldName = world.getName();
+                    WorldMergeData worldMergeData = worldData.get(worldName);
+                    if (worldMergeData != null) {
+                        worldMergeData.removeItem(source.getUniqueId());
+                    }
+                    // 因为source被移除了，可以提前结束
+                    break;
+                } else {
+                    // 其他物品合并到最老的
+                    performMerge(oldestItem, target);
+                    // 从数据中移除被合并的物品
+                    String worldName = world.getName();
+                    WorldMergeData worldMergeData = worldData.get(worldName);
+                    if (worldMergeData != null) {
+                        worldMergeData.removeItem(target.getUniqueId());
+                    }
                 }
-
-                break; // 一次只合并一个
             }
         }
     }
@@ -201,9 +253,16 @@ public class CustomItemMerger {
         ItemStack s1 = item1.getItemStack();
         ItemStack s2 = item2.getItemStack();
 
+        // 基础类型检查
         if (s1.getType() != s2.getType()) return false;
+
+        // 堆叠上限检查
+        if (s1.getAmount() >= s1.getMaxStackSize() ||
+                s2.getAmount() >= s2.getMaxStackSize()) return false;
         if (s1.getAmount() + s2.getAmount() > s1.getMaxStackSize()) return false;
-        return Objects.equals(s1.getItemMeta(), s2.getItemMeta());
+
+        // 原版物品合并逻辑：检查是否可以堆叠
+        return s1.isSimilar(s2);
     }
 
     /**
@@ -211,38 +270,6 @@ public class CustomItemMerger {
      */
     private void performMerge(Item keep, Item remove) {
         if (!keep.isValid() || !remove.isValid()) return;
-
-        // 获取持久化数据容器
-        PersistentDataContainer keepPdc = keep.getPersistentDataContainer();
-        PersistentDataContainer removePdc = remove.getPersistentDataContainer();
-
-        // 定义持久化数据的键
-        NamespacedKey spawnTickKey = new NamespacedKey(plugin, "spawn_tick");
-        NamespacedKey sourceKey = new NamespacedKey(plugin, "source");
-        NamespacedKey droppedByKey = new NamespacedKey(plugin, "dropped_by");
-
-        // 获取生成时间
-        long keepSpawnTick = keepPdc.getOrDefault(spawnTickKey, PersistentDataType.LONG, 0L);
-        long removeSpawnTick = removePdc.getOrDefault(spawnTickKey, PersistentDataType.LONG, 0L);
-
-        // 如果被移除的物品更新，则将其数据转移到保留的物品上
-        if (removeSpawnTick > keepSpawnTick) {
-            keepPdc.set(spawnTickKey, PersistentDataType.LONG, removeSpawnTick);
-
-            String source = removePdc.get(sourceKey, PersistentDataType.STRING);
-            if (source != null) {
-                keepPdc.set(sourceKey, PersistentDataType.STRING, source);
-            } else {
-                keepPdc.remove(sourceKey);
-            }
-
-            String droppedByStr = removePdc.get(droppedByKey, PersistentDataType.STRING);
-            if (droppedByStr != null) {
-                keepPdc.set(droppedByKey, PersistentDataType.STRING, droppedByStr);
-            } else {
-                keepPdc.remove(droppedByKey);
-            }
-        }
 
         // 合并物品堆叠数量
         try {
