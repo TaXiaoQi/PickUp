@@ -324,9 +324,12 @@ public class PickupEvent implements Listener {
         Item item = event.getEntity();
 
         // 直接通过生命周期管理器清理
-        ItemLifecycleManager lifecycleManager = plugin.getItemLifecycleManager();
-        if (lifecycleManager != null) {
-            lifecycleManager.cleanupItemCompletely(item);
+        PickupManager manager = getPickupManager();
+        if (manager != null) {
+            ItemLifecycleManager lifecycleManager = manager.getLifecycleManager();
+            if (lifecycleManager != null) {
+                lifecycleManager.cleanupItemCompletely(item);
+            }
         }
     }
 

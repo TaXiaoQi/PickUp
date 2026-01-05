@@ -2,7 +2,6 @@ package pickup.feature;
 
 import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
@@ -36,22 +35,6 @@ public class ItemSpatialIndex {
     private ScheduledTask cleanupTask;
     public ItemSpatialIndex(Main plugin) {
         this.plugin = plugin;
-    }
-
-    /**
-     * 检查是否有任何物品
-     */
-    public boolean hasAnyItems() {
-        // 方法1：遍历所有世界的物品实体
-        for (World world : Bukkit.getWorlds()) {
-            if (!world.getEntitiesByClass(Item.class).isEmpty()) {
-                return true;
-            }
-        }
-        return false;
-
-        // 或者方法2：如果你有自己的计数机制
-        // return totalItemCount > 0;
     }
 
     /**
