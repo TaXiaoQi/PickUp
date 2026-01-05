@@ -23,6 +23,7 @@ import org.jetbrains.annotations.NotNull;
 import pickup.Main;
 import pickup.config.PickupConfig;
 import pickup.feature.pickupmanager.ItemDrivenPickupScheduler;
+import pickup.feature.pickupmanager.ItemLifecycleManager;
 import pickup.feature.pickupmanager.PickupManager;
 
 import java.util.Map;
@@ -322,16 +323,10 @@ public class PickupEvent implements Listener {
 
         Item item = event.getEntity();
 
-        // 1. 从空间索引中移除
-        plugin.getItemSpatialIndex().unregisterItem(item);
-
-        // 2. 从调度器队列中移除（如果物品驱动模式启用）
-        PickupManager manager = getPickupManager();
-        if (manager != null && manager.isActive() && config.isItemDrivenEnabled()) {
-            ItemDrivenPickupScheduler scheduler = manager.getItemScheduler();
-            if (scheduler != null) {
-                scheduler.unregisterItem(item);
-            }
+        // 直接通过生命周期管理器清理
+        ItemLifecycleManager lifecycleManager = plugin.getItemLifecycleManager();
+        if (lifecycleManager != null) {
+            lifecycleManager.cleanupItemCompletely(item);
         }
     }
 

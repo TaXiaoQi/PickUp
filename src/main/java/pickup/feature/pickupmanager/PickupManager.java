@@ -13,8 +13,7 @@ import pickup.config.PickupConfig;
 import pickup.feature.ItemSpatialIndex;
 
 /**
- * 拾取管理器 - 协调者类
- * 负责协调各个组件的工作，对外提供统一接口
+ * 拾取管理器
  */
 public class PickupManager implements PickupConfig.ConfigChangeListener {
     private final Main plugin;
@@ -38,7 +37,6 @@ public class PickupManager implements PickupConfig.ConfigChangeListener {
         PickupExecutor pickupExecutor = new PickupExecutor(plugin, config, itemIndex, lifecycleManager);
         this.playerHandler = new PlayerDrivenPickupHandler(plugin, config, itemIndex, pickupExecutor);
         this.itemScheduler = new ItemDrivenPickupScheduler(plugin, config, pickupExecutor);
-
         this.config.addChangeListener(this);
 
     }
