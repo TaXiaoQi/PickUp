@@ -8,17 +8,34 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import pickup.Main;
-import pickup.feature.pickupmanager.ItemDrivenPickupScheduler;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 统一物品空间索引系统
- * 按区块分区缓存物品，供物品驱动和玩家驱动模式共享使用
+ * 物品空间索引系统
  */
 public class ItemSpatialIndex {
+
+    // 新增：物品源类型（从ItemLifecycleManager移过来）
+    public enum ItemSourceType {
+        PLAYER_DROP, NATURAL_DROP, INSTANT_PICKUP, UNKNOWN
+    }
+
+    // 新增：物品元数据
+    public static class ItemMetadata {
+        public final long spawnTick;
+        public final ItemSourceType source;
+        public final UUID droppedBy; // 如果是玩家丢弃
+
+        public ItemMetadata(long spawnTick, ItemSourceType source, UUID droppedBy) {
+            this.spawnTick = spawnTick;
+            this.source = source;
+            this.droppedBy = droppedBy;
+        }
+    }
+
 
     private final Main plugin;
 
@@ -28,6 +45,9 @@ public class ItemSpatialIndex {
     // 反向索引：Item -> ChunkCoord（用于快速删除）
     private final Map<Item, ChunkCoord> itemToChunk = new ConcurrentHashMap<>();
 
+    // 新增：物品元数据存储
+    private final Map<UUID, ItemMetadata> itemMetadata = new ConcurrentHashMap<>();
+
     // 按世界统计物品数量（优化hasPickupableItems检查）
     private final Map<World, AtomicInteger> worldItemCount = new ConcurrentHashMap<>();
 
@@ -36,6 +56,53 @@ public class ItemSpatialIndex {
     public ItemSpatialIndex(Main plugin) {
         this.plugin = plugin;
     }
+
+    // ====== 元数据接口 ======
+
+    /**
+     * 获取物品元数据
+     */
+    public ItemMetadata getItemMetadata(UUID itemId) {
+        return itemMetadata.get(itemId);
+    }
+
+    public ItemMetadata getItemMetadata(Item item) {
+        if (item == null) return null;
+        return itemMetadata.get(item.getUniqueId());
+    }
+
+    /**
+     * 获取物品生成时间
+     */
+    public long getSpawnTick(Item item) {
+        ItemMetadata meta = getItemMetadata(item);
+        return meta != null ? meta.spawnTick : item.getWorld().getGameTime();
+    }
+
+    /**
+     * 获取物品来源类型
+     */
+    public ItemSourceType getSourceType(Item item) {
+        ItemMetadata meta = getItemMetadata(item);
+        return meta != null ? meta.source : ItemSourceType.UNKNOWN;
+    }
+
+    /**
+     * 获取丢弃者（如果是玩家丢弃）
+     */
+    public UUID getDroppedBy(Item item) {
+        ItemMetadata meta = getItemMetadata(item);
+        return meta != null ? meta.droppedBy : null;
+    }
+
+    /**
+     * 检查物品是否已注册
+     */
+    public boolean isItemRegistered(Item item) {
+        return item != null && itemMetadata.containsKey(item.getUniqueId());
+    }
+
+// ====== 原有方法（增强版） ======
 
     /**
      * 获取附近的玩家（优化性能）
@@ -56,13 +123,22 @@ public class ItemSpatialIndex {
     }
 
     /**
-     * 注册新物品到索引
+     * 注册新物品到索引（带元数据）
      */
-    public void registerItem(Item item) {
+    public void registerItem(Item item, ItemSourceType source, UUID droppedBy) {
         if (item == null) {
             plugin.getLogger().warning("registerItem: item为null");
             return;
         }
+
+        UUID itemId = item.getUniqueId();
+        long spawnTick = item.getWorld().getGameTime();
+
+        // 检查是否已注册
+        if (itemMetadata.containsKey(itemId)) {
+            return;
+        }
+
         ChunkCoord coord = getChunkCoord(item.getLocation());
         try {
             chunkIndex.computeIfAbsent(item.getWorld(), w -> new ConcurrentHashMap<>())
@@ -70,6 +146,9 @@ public class ItemSpatialIndex {
                     .add(item);
 
             itemToChunk.put(item, coord);
+
+            // 存储元数据
+            itemMetadata.put(itemId, new ItemMetadata(spawnTick, source, droppedBy));
 
             // 更新世界物品计数
             worldItemCount.computeIfAbsent(item.getWorld(), w -> new AtomicInteger(0))
@@ -80,11 +159,19 @@ public class ItemSpatialIndex {
     }
 
     /**
+     * 注册新物品到索引（简化版，默认自然掉落）
+     */
+    public void registerItem(Item item) {
+        registerItem(item, ItemSourceType.NATURAL_DROP, null);
+    }
+
+    /**
      * 从索引中移除物品
      */
     public void unregisterItem(Item item) {
         if (item == null) return;
 
+        UUID itemId = item.getUniqueId();
         ChunkCoord coord = itemToChunk.remove(item);
         if (coord == null) return;
 
@@ -103,6 +190,9 @@ public class ItemSpatialIndex {
                 chunkIndex.remove(world);
             }
         }
+
+        // 移除元数据
+        itemMetadata.remove(itemId);
 
         // 更新世界物品计数
         AtomicInteger count = worldItemCount.get(world);
@@ -207,8 +297,8 @@ public class ItemSpatialIndex {
                         itemToChunk.remove(item);
 
                         // 同时从调度器移除
-                        if (plugin.getPickupManager() != null) {
-                            ItemDrivenPickupScheduler scheduler = plugin.getPickupManager().getItemScheduler();
+                        if (plugin.getPickupEventHandler() != null) {
+                            ItemDrivenPickupScheduler scheduler = plugin.getPickupEventHandler().getItemScheduler();
                             if (scheduler != null) {
                                 scheduler.unregisterItem(item);
                             }

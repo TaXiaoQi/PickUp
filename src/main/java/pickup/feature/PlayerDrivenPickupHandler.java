@@ -1,10 +1,9 @@
-package pickup.feature.pickupmanager;
+package pickup.feature;
 
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import pickup.Main;
 import pickup.config.PickupConfig;
-import pickup.feature.ItemSpatialIndex;
 
 import java.util.Set;
 
@@ -15,7 +14,7 @@ public class PlayerDrivenPickupHandler {
     private final Main plugin;
     private final PickupConfig config;
     private final ItemSpatialIndex itemIndex;
-    private final PickupExecutor pickupExecutor;
+    private final pickup.feature.PickupExecutor pickupExecutor;
 
     private boolean active = false;
 

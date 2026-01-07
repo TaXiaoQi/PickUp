@@ -1,14 +1,11 @@
-package pickup.feature.pickupmanager;
+package pickup.feature;
 
 import io.papermc.paper.threadedregions.scheduler.RegionScheduler;
 import org.bukkit.*;
 import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.persistence.PersistentDataContainer;
-import org.bukkit.persistence.PersistentDataType;
 import pickup.Main;
 import pickup.config.PickupConfig;
-import pickup.feature.ItemSpatialIndex;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,7 +24,11 @@ public class ItemDrivenPickupScheduler {
     // 按世界分组的活跃物品队列
     private final Map<World, Queue<Item>> worldItemQueues = new ConcurrentHashMap<>();
 
-    private static final NamespacedKey SPAWN_TICK_KEY = ItemLifecycleManager.SPAWN_TICK_KEY;
+    // 移除对 ItemLifecycleManager 的引用
+    private static final NamespacedKey SPAWN_TICK_KEY =
+            new NamespacedKey("pickup", "spawn_tick");
+    private static final NamespacedKey INITIALIZED_KEY =
+            new NamespacedKey("pickup", "initialized");
 
     public ItemDrivenPickupScheduler(Main plugin, PickupConfig config,
                                      PickupExecutor pickupExecutor) {
@@ -54,10 +55,8 @@ public class ItemDrivenPickupScheduler {
                 return;
             }
 
-            // 检查物品是否已初始化
-            PersistentDataContainer pdc = item.getPersistentDataContainer();
-            Byte initialized = pdc.get(ItemLifecycleManager.INITIALIZED_KEY, PersistentDataType.BYTE);
-            if (initialized == null || initialized == 0) {
+            // 检查物品是否已在空间索引中注册
+            if (!spatialIndex.isItemRegistered(item)) {
                 return;
             }
 
@@ -84,6 +83,7 @@ public class ItemDrivenPickupScheduler {
             World world = item.getWorld();
             Queue<Item> queue = worldItemQueues.get(world);
             if (queue != null) {
+                queue.remove(item);
                 if (queue.isEmpty()) {
                     worldItemQueues.remove(world);
                 }
@@ -177,7 +177,7 @@ public class ItemDrivenPickupScheduler {
             return;
         }
 
-        // 使用空间索引查找最近的玩家
+        // 优先查找玩家
         Player nearestPlayer = findNearestPlayerUsingIndex(item);
         if (nearestPlayer != null) {
             if (pickupExecutor.canPickupNow(nearestPlayer, item, false)) {
@@ -186,11 +186,48 @@ public class ItemDrivenPickupScheduler {
             }
         }
 
-        // 如果没有找到玩家，查找其他生物
-        LivingEntity nearestMob = findNearestMob(item);
-        if (nearestMob != null) {
-            pickupExecutor.performLivingEntityPickup(nearestMob, item);
+        // 对于其他生物，查找最近的符合条件的生物
+        // 注意：这里不能使用 findNearestMob，因为它会再次检查玩家
+        LivingEntity nearestNonPlayer = findNearestNonPlayerMob(item);
+        if (nearestNonPlayer != null) {
+            pickupExecutor.performLivingEntityPickup(nearestNonPlayer, item);
         }
+    }
+
+    /**
+     * 查找最近的非玩家生物
+     */
+    private LivingEntity findNearestNonPlayerMob(Item item) {
+        if (!item.isValid() || item.isDead()) {
+            return null;
+        }
+
+        Location loc = item.getLocation();
+        double range = config.getPickupRange();
+        double rangeSq = range * range;
+
+        LivingEntity nearestMob = null;
+        double nearestDistSq = Double.MAX_VALUE;
+
+        // 获取范围内的所有实体
+        for (Entity entity : loc.getWorld().getNearbyEntities(loc, range, range, range)) {
+            // 排除玩家
+            if (entity instanceof Player) continue;
+
+            if (entity instanceof Mob mob) {
+                // 计算距离
+                double distSq = mob.getLocation().distanceSquared(loc);
+                if (distSq <= rangeSq && distSq < nearestDistSq) {
+                    // 检查是否可以拾取
+                    if (pickupExecutor.canPickupNow(mob, item, false)) {
+                        nearestMob = mob;
+                        nearestDistSq = distSq;
+                    }
+                }
+            }
+        }
+
+        return nearestMob;
     }
 
     /**
@@ -201,25 +238,18 @@ public class ItemDrivenPickupScheduler {
             return false;
         }
 
-        PersistentDataContainer pdc = item.getPersistentDataContainer();
-
-        // 检查是否已初始化
-        Byte initialized = pdc.get(ItemLifecycleManager.INITIALIZED_KEY, PersistentDataType.BYTE);
-        if (initialized == null || initialized == 0) {
-            return false;
-        }
-
-        // 检查生成时间
-        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
-        if (spawnTick == null) {
+        // 使用 ItemSpatialIndex 获取生成时间
+        ItemSpatialIndex.ItemMetadata meta = spatialIndex.getItemMetadata(item);
+        if (meta == null) {
             return false;
         }
 
         long currentTick = item.getWorld().getGameTime();
+        long spawnTick = meta.spawnTick;
         long activeTicks = config.getActiveDetectionTicks();
 
         // 如果 activeTicks 为0，表示永久活跃（一直检测到被拾取）
-        if (activeTicks <= 0) {
+        if (activeTicks < 0) {
             return true;
         }
 
@@ -245,9 +275,9 @@ public class ItemDrivenPickupScheduler {
         double nearestDistSq = Double.MAX_VALUE;
 
         for (Player player : nearbyPlayers) {
-            if (isEligiblePicker(player)) { // 修复：直接调用，不反转
+            if (isEligiblePicker(player)) {
                 double distSq = player.getLocation().distanceSquared(loc);
-                if (distSq <= range * range && distSq < nearestDistSq) { // 修复：优化条件
+                if (distSq <= range * range && distSq < nearestDistSq) {
                     if (pickupExecutor.canPickupNow(player, item, false)) {
                         nearestPlayer = player;
                         nearestDistSq = distSq;
@@ -257,40 +287,6 @@ public class ItemDrivenPickupScheduler {
         }
 
         return nearestPlayer;
-    }
-
-    /**
-     * 查找最近的生物
-     */
-    private LivingEntity findNearestMob(Item item) {
-        if (!item.isValid() || item.isDead()) {
-            return null;
-        }
-
-        Location loc = item.getLocation();
-        double range = config.getPickupRange();
-        double rangeSq = range * range;
-
-        LivingEntity nearestMob = null;
-        double nearestDistSq = Double.MAX_VALUE;
-
-        // 获取范围内的所有实体
-        for (Entity entity : loc.getWorld().getNearbyEntities(loc, range, range, range)) {
-            if (entity instanceof Mob mob && isEligiblePicker(mob)) { // 修复：直接调用，不反转
-                // 计算距离
-                double distSq = mob.getLocation().distanceSquared(loc);
-                if (distSq <= rangeSq && distSq < nearestDistSq) { // 修复：优化条件
-                    // 检查是否可以拾取
-                    if (pickupExecutor.canPickupNow(mob, item, false)) {
-                        nearestMob = mob;
-                        nearestDistSq = distSq;
-
-                    }
-                }
-            }
-        }
-
-        return nearestMob;
     }
 
     /**
@@ -314,5 +310,4 @@ public class ItemDrivenPickupScheduler {
         // 默认不允许拾取
         return false;
     }
-
 }

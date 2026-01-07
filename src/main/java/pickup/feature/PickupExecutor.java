@@ -1,38 +1,38 @@
-package pickup.feature.pickupmanager;
+package pickup.feature;
 
 import org.bukkit.*;
-import org.bukkit.entity.*;
+import org.bukkit.entity.Item;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
 import org.bukkit.inventory.EntityEquipment;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.persistence.PersistentDataContainer;
-import org.bukkit.persistence.PersistentDataType;
 import pickup.Main;
 import pickup.config.PickupConfig;
-import pickup.feature.ItemSpatialIndex;
+import pickup.event.PickupEventHandler;
 import pickup.tool.ArmorType;
 import pickup.tool.PacketUtils;
 
 import java.util.HashMap;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * 拾取执行器
- * 负责实际的拾取逻辑执行，供玩家驱动和物品驱动模式共用
  */
 public class PickupExecutor {
     private final Main plugin;
     private final PickupConfig config;
     private final ItemSpatialIndex itemIndex;
-    private final ItemLifecycleManager lifecycleManager;
+    // 移除 ItemLifecycleManager 依赖
 
-    public PickupExecutor(Main plugin, PickupConfig config, ItemSpatialIndex itemIndex,
-                          ItemLifecycleManager lifecycleManager) {
+    public PickupExecutor(Main plugin, PickupConfig config, ItemSpatialIndex itemIndex) {
         this.plugin = plugin;
         this.config = config;
         this.itemIndex = itemIndex;
-        this.lifecycleManager = lifecycleManager;
+        // 移除 lifecycleManager 参数
     }
 
     // ====== 核心拾取逻辑 ======
@@ -50,7 +50,7 @@ public class PickupExecutor {
         int amount = originalStack.getAmount();
 
         // 创建干净的物品副本
-        ItemStack cleanStack = lifecycleManager.createCleanStack(originalStack);
+        ItemStack cleanStack = createCleanStack(originalStack);
         int remainingAmount = cleanStack.getAmount();
 
         PlayerInventory inv = player.getInventory();
@@ -115,7 +115,6 @@ public class PickupExecutor {
             item.remove();
             itemIndex.unregisterItem(item);
         }
-
     }
 
     // ====== 条件检查方法 ======
@@ -126,41 +125,34 @@ public class PickupExecutor {
     }
 
     public boolean canPickupNow(LivingEntity entity, Item item, boolean skipEntitySpecificChecks) {
-        // 添加初始化检查
-        PersistentDataContainer pdc = item.getPersistentDataContainer();
-        Byte initialized = pdc.get(ItemLifecycleManager.INITIALIZED_KEY, PersistentDataType.BYTE);
-        if (initialized == null || initialized == 0) {
-            return false; // 未初始化的物品不能被拾取
+        // 使用 ItemSpatialIndex 的元数据
+        ItemSpatialIndex.ItemMetadata meta = itemIndex.getItemMetadata(item);
+
+        if (meta == null) {
+            // 如果没有元数据，使用默认检查
+            return entity != null &&
+                    item.getLocation().distanceSquared(entity.getLocation()) <=
+                            config.getPickupRange() * config.getPickupRange();
         }
 
-        long currentTime = item.getWorld().getGameTime();
-        Long spawnTick = pdc.get(ItemLifecycleManager.SPAWN_TICK_KEY, PersistentDataType.LONG);
-        String sourceStr = pdc.get(ItemLifecycleManager.SOURCE_KEY, PersistentDataType.STRING);
-        ItemLifecycleManager.ItemSourceType source = parseSource(sourceStr);
-
-        if (spawnTick == null) {
-            spawnTick = currentTime;
-        }
+        long currentTick = item.getWorld().getGameTime();
+        long spawnTick = meta.spawnTick;
+        ItemSpatialIndex.ItemSourceType source = meta.source;
+        UUID droppedBy = meta.droppedBy;
 
         // 检查延迟
         long requiredDelay = getRequiredDelay(source);
-        if (currentTime - spawnTick < requiredDelay) {
+        if (currentTick - spawnTick < requiredDelay) {
             return false;
         }
 
         // 检查自我免疫
         if (!skipEntitySpecificChecks && entity instanceof Player player &&
-                source == ItemLifecycleManager.ItemSourceType.PLAYER_DROP) {
-            String droppedByStr = pdc.get(ItemLifecycleManager.DROPPED_BY_KEY, PersistentDataType.STRING);
-            if (droppedByStr != null) {
-                try {
-                    UUID droppedBy = UUID.fromString(droppedByStr);
-                    if (droppedBy.equals(player.getUniqueId())) {
-                        if (currentTime - spawnTick < config.getSelfImmuneTicks()) {
-                            return false;
-                        }
-                    }
-                } catch (IllegalArgumentException ignored) {}
+                source == ItemSpatialIndex.ItemSourceType.PLAYER_DROP) {
+            if (droppedBy != null && droppedBy.equals(player.getUniqueId())) {
+                if (currentTick - spawnTick < config.getSelfImmuneTicks()) {
+                    return false;
+                }
             }
         }
 
@@ -313,9 +305,10 @@ public class PickupExecutor {
 
             // 同时从调度器移除（如果物品驱动模式启用）
             if (config.isItemDrivenEnabled()) {
-                // 通过插件主类获取拾取管理器
-                if (plugin.getPickupManager() != null) {
-                    ItemDrivenPickupScheduler scheduler = plugin.getPickupManager().getItemScheduler();
+                // 通过 PickupEventHandler 获取调度器
+                PickupEventHandler pickupHandler = plugin.getPickupEventHandler();
+                if (pickupHandler != null) {
+                    ItemDrivenPickupScheduler scheduler = pickupHandler.getItemScheduler();
                     if (scheduler != null) {
                         scheduler.unregisterItem(item);
                     }
@@ -326,6 +319,41 @@ public class PickupExecutor {
 
     // ====== 工具方法 ======
 
+    /**
+     * 创建干净的物品堆栈（移除插件添加的元数据）
+     */
+    public ItemStack createCleanStack(ItemStack original) {
+        if (original == null || original.getType().isAir()) {
+            return new ItemStack(Material.AIR);
+        }
+
+        // 检查是否需要保护 NBT
+        Material type = original.getType();
+        if (BLOCK_ITEMS_WITH_NBT.contains(type)) {
+            // 对于需要保护 NBT 的方块，返回原样副本
+            return original.clone();
+        }
+
+        ItemStack clean = original.clone();
+
+        // 移除插件添加的持久化数据
+        if (clean.hasItemMeta()) {
+            org.bukkit.inventory.meta.ItemMeta meta = clean.getItemMeta().clone();
+            PersistentDataContainer pdc = meta.getPersistentDataContainer();
+
+            // 移除插件添加的键
+            for (NamespacedKey key : pdc.getKeys()) {
+                if (key.getNamespace().equals("pickup")) {
+                    pdc.remove(key);
+                }
+            }
+
+            clean.setItemMeta(meta);
+        }
+
+        return clean;
+    }
+
     private ItemStack cleanAndPreserveMeta(ItemStack original, int newAmount) {
         if (original == null || original.getType().isAir()) {
             return new ItemStack(Material.AIR);
@@ -335,9 +363,14 @@ public class PickupExecutor {
         if (clean.hasItemMeta()) {
             org.bukkit.inventory.meta.ItemMeta meta = clean.getItemMeta().clone();
             PersistentDataContainer pdc = meta.getPersistentDataContainer();
-            pdc.remove(ItemLifecycleManager.SOURCE_KEY);
-            pdc.remove(ItemLifecycleManager.SPAWN_TICK_KEY);
-            pdc.remove(ItemLifecycleManager.DROPPED_BY_KEY);
+
+            // 移除插件添加的持久化数据
+            for (NamespacedKey key : pdc.getKeys()) {
+                if (key.getNamespace().equals("pickup")) {
+                    pdc.remove(key);
+                }
+            }
+
             clean.setItemMeta(meta);
         }
         return clean;
@@ -393,20 +426,24 @@ public class PickupExecutor {
                 name.equals("WARPED_FUNGUS_ON_A_STICK");
     }
 
-    private ItemLifecycleManager.ItemSourceType parseSource(String str) {
-        if (str == null) return ItemLifecycleManager.ItemSourceType.UNKNOWN;
-        try {
-            return ItemLifecycleManager.ItemSourceType.valueOf(str);
-        } catch (IllegalArgumentException e) {
-            return ItemLifecycleManager.ItemSourceType.UNKNOWN;
-        }
-    }
-
-    private long getRequiredDelay(ItemLifecycleManager.ItemSourceType source) {
+    private long getRequiredDelay(ItemSpatialIndex.ItemSourceType source) {
         return switch (source) {
             case PLAYER_DROP -> config.getPlayerDropDelayTicks();
             case NATURAL_DROP -> config.getNaturalDropDelayTicks();
             default -> config.getInstantPickupDelayTicks();
         };
     }
+
+    // 需要保护nbt的方块物品
+    private static final Set<Material> BLOCK_ITEMS_WITH_NBT = Set.of(
+            Material.SHULKER_BOX, Material.WHITE_SHULKER_BOX, Material.ORANGE_SHULKER_BOX,
+            Material.MAGENTA_SHULKER_BOX, Material.LIGHT_BLUE_SHULKER_BOX, Material.YELLOW_SHULKER_BOX,
+            Material.LIME_SHULKER_BOX, Material.PINK_SHULKER_BOX, Material.GRAY_SHULKER_BOX,
+            Material.LIGHT_GRAY_SHULKER_BOX, Material.CYAN_SHULKER_BOX, Material.PURPLE_SHULKER_BOX,
+            Material.BLUE_SHULKER_BOX, Material.BROWN_SHULKER_BOX, Material.GREEN_SHULKER_BOX,
+            Material.RED_SHULKER_BOX, Material.BLACK_SHULKER_BOX,
+            Material.BEEHIVE, Material.BEE_NEST, Material.SPAWNER,
+            Material.COMMAND_BLOCK, Material.CHAIN_COMMAND_BLOCK, Material.REPEATING_COMMAND_BLOCK,
+            Material.STRUCTURE_BLOCK, Material.BEACON
+    );
 }

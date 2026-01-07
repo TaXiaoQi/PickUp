@@ -2,71 +2,58 @@ package pickup.event;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
-import org.bukkit.Location;
-import org.bukkit.World;
-import org.bukkit.entity.Item;
-import org.bukkit.entity.Player;
+import org.bukkit.*;
+import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockDropItemEvent;
-import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.entity.EntityPickupItemEvent;
-import org.bukkit.event.entity.ItemSpawnEvent;
-import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.entity.*;
 import org.bukkit.event.inventory.InventoryPickupItemEvent;
-import org.bukkit.event.player.PlayerDropItemEvent;
-import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.*;
 import org.bukkit.inventory.ItemStack;
-import org.jetbrains.annotations.NotNull;
 import pickup.Main;
 import pickup.config.PickupConfig;
-import pickup.feature.pickupmanager.ItemDrivenPickupScheduler;
-import pickup.feature.pickupmanager.ItemLifecycleManager;
-import pickup.feature.pickupmanager.PickupManager;
+import pickup.feature.ItemSpatialIndex;
+import pickup.feature.*;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class PickupEvent implements Listener {
+/**
+ * 拾取事件处理器（合并PickupEvent和PickupManager）
+ */
+public class PickupEventHandler implements Listener, PickupConfig.ConfigChangeListener {
+
     // 记录每个玩家上次检测的时间（tick）
     private final Map<UUID, Long> lastCheckTicks = new ConcurrentHashMap<>();
 
-    // 插件主类引用，用于访问配置和状态
-    private PickupManager pickupManager; // 改为非final，以便更新
-    private final Main plugin;           // 插件主类实例
+    private final Main plugin;
     private final PickupConfig config;
+    private final ItemSpatialIndex itemIndex;
+    private final PickupExecutor pickupExecutor;
+    private final PlayerDrivenPickupHandler playerHandler;
+    private final ItemDrivenPickupScheduler itemScheduler;
 
-    /**
-     * 构造函数
-     * @param plugin 插件主类实例，提供配置和状态信息
-     */
-    public PickupEvent(Main plugin) {
+    // 管理器运行状态
+    private boolean active = false;
+
+    public PickupEventHandler(Main plugin, PickupConfig config, ItemSpatialIndex spatialIndex) {
         this.plugin = plugin;
-        this.config = plugin.getPickupConfig();
-        this.pickupManager = plugin.getPickupManager(); // 延迟获取
+        this.config = config;
+        this.itemIndex = spatialIndex;
+
+        // 初始化组件
+        this.pickupExecutor = new PickupExecutor(plugin, config, itemIndex);
+        this.playerHandler = new PlayerDrivenPickupHandler(plugin, config, itemIndex, pickupExecutor);
+        this.itemScheduler = new ItemDrivenPickupScheduler(plugin, config, pickupExecutor);
+
+        this.config.addChangeListener(this);
     }
 
-    /**
-     * 更新拾取管理器引用
-     */
-    public void updatePickupManager(PickupManager newManager) {
-        this.pickupManager = newManager;
-        plugin.getLogger().info("事件监听器已更新");
-    }
-
-    /**
-     * 安全获取拾取管理器（防止空指针）
-     */
-    private PickupManager getPickupManager() {
-        if (pickupManager == null) {
-            // 尝试重新获取
-            pickupManager = plugin.getPickupManager();
-        }
-        return pickupManager;
-    }
+    // ====== 事件处理方法 ======
 
     /**
      * 处理物品生成事件
@@ -77,24 +64,22 @@ public class PickupEvent implements Listener {
             return;
         }
 
-        PickupManager manager = getPickupManager();
-        if (manager == null) {
-            plugin.getLogger().warning("拾取管理器未初始化，跳过物品生成处理");
-            return;
-        }
-
-        // 1. 立即注册到空间索引（无论物品是否完全初始化）
         Item item = event.getEntity();
-        plugin.getItemSpatialIndex().registerItem(item);
 
-        // 2. 完全在延迟任务中处理生命周期逻辑
+        // 1. 立即注册到空间索引
+        itemIndex.registerItem(item, ItemSpatialIndex.ItemSourceType.NATURAL_DROP, null);
+
+        // 2. 完全在延迟任务中处理其他逻辑
         plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
             if (!item.isValid() || item.isDead()) {
                 return;
             }
 
-            // 委托给拾取管理器处理拾取逻辑
-            manager.handleItemSpawn(event);
+            // 禁用原版拾取逻辑
+            disableVanillaPickup(item);
+
+            // 延迟注册到调度器（确保物品完全初始化）
+            scheduleItemRegistration(item);
         }, 3L);
     }
 
@@ -103,16 +88,21 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onPlayerDropItem(PlayerDropItemEvent event) {
-        // 检查插件是否启用
         if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
             return;
         }
 
-        PickupManager manager = getPickupManager();
-        if (manager == null) return;
+        Player player = event.getPlayer();
+        Item item = event.getItemDrop();
 
-        // 委托给拾取管理器处理玩家丢弃逻辑
-        manager.handlePlayerDrop(event);
+        // 注册到空间索引
+        itemIndex.registerItem(item, ItemSpatialIndex.ItemSourceType.PLAYER_DROP, player.getUniqueId());
+        disableVanillaPickup(item);
+
+        // 注册到物品驱动调度器
+        if (config.isItemDrivenEnabled()) {
+            itemScheduler.registerItem(item);
+        }
     }
 
     /**
@@ -120,16 +110,20 @@ public class PickupEvent implements Listener {
      */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onBlockDrop(BlockDropItemEvent event) {
-        // 检查插件是否启用
         if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
             return;
         }
 
-        PickupManager manager = getPickupManager();
-        if (manager == null) return;
+        for (Item item : event.getItems()) {
+            // 注册到空间索引
+            itemIndex.registerItem(item, ItemSpatialIndex.ItemSourceType.NATURAL_DROP, null);
+            disableVanillaPickup(item);
 
-        // 委托给拾取管理器处理方块掉落逻辑
-        manager.handleBlockDrop(event);
+            // 注册到物品驱动调度器
+            if (config.isItemDrivenEnabled()) {
+                itemScheduler.registerItem(item);
+            }
+        }
     }
 
     /**
@@ -138,15 +132,10 @@ public class PickupEvent implements Listener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onEntityDeath(EntityDeathEvent event) {
         // 检查插件是否启用
-        if (!plugin.isEnabled() || plugin.isPickupDisabled()) {
-            return;
+        if (plugin.isEnabled()) {
+            plugin.isPickupDisabled();
         }
 
-        PickupManager manager = getPickupManager();
-        if (manager == null) return;
-
-        // 委托给拾取管理器处理实体死亡掉落逻辑
-        manager.handleEntityDeath(event);
     }
 
     /**
@@ -219,28 +208,23 @@ public class PickupEvent implements Listener {
             return;
         }
 
-        PickupManager manager = getPickupManager();
-        if (manager == null) return;
-
         Item item = event.getItem();
         ItemStack original = item.getItemStack();
 
         if (original.getType().isAir()) return;
 
-        if (manager.hasPickupMark(original)) {
-            ItemStack clean = manager.createCleanStack(original);
+        // 创建干净堆栈（如果需要）
+        ItemStack clean = pickupExecutor.createCleanStack(original);
+        if (clean != original) {
             item.setItemStack(clean);
         }
 
-        // 从空间索引和调度器移除
-        plugin.getItemSpatialIndex().unregisterItem(item);
+        // 从空间索引移除
+        itemIndex.unregisterItem(item);
 
         // 从调度器移除
-        if (manager.isActive() && config.isItemDrivenEnabled()) {
-            ItemDrivenPickupScheduler scheduler = manager.getItemScheduler();
-            if (scheduler != null) {
-                scheduler.unregisterItem(item);
-            }
+        if (config.isItemDrivenEnabled() && itemScheduler != null) {
+            itemScheduler.unregisterItem(item);
         }
     }
 
@@ -275,11 +259,8 @@ public class PickupEvent implements Listener {
             return;
         }
 
-        PickupManager manager = getPickupManager();
-        if (manager == null) return;
-
         // 第四层：世界物品检查（在时间和距离都满足后才检查）
-        if (!manager.hasPickupableItems(player.getWorld())) {
+        if (!itemIndex.hasItemsInWorld(player.getWorld())) {
             lastCheckTicks.remove(playerId); // 清空记录，避免重复计算
             return;
         }
@@ -288,7 +269,7 @@ public class PickupEvent implements Listener {
         lastCheckTicks.put(playerId, currentTick);
 
         // 执行拾取检测
-        manager.tryPickup(player);
+        tryPickup(player);
     }
 
     /**
@@ -323,17 +304,167 @@ public class PickupEvent implements Listener {
 
         Item item = event.getEntity();
 
-        // 直接通过生命周期管理器清理
-        PickupManager manager = getPickupManager();
-        if (manager != null) {
-            ItemLifecycleManager lifecycleManager = manager.getLifecycleManager();
-            if (lifecycleManager != null) {
-                lifecycleManager.cleanupItemCompletely(item);
+        // 直接从空间索引和调度器移除
+        itemIndex.unregisterItem(item);
+
+        if (itemScheduler != null) {
+            itemScheduler.unregisterItem(item);
+        }
+    }
+
+    /**
+     * 延迟注册到调度器
+     */
+    private void scheduleItemRegistration(Item item) {
+        if (!config.isItemDrivenEnabled()) {
+            return;
+        }
+
+        plugin.getServer().getRegionScheduler().runDelayed(plugin, item.getLocation(), task -> {
+            if (!item.isValid() || item.isDead()) {
+                return;
+            }
+
+            // 检查物品是否已注册到空间索引
+            if (!itemIndex.isItemRegistered(item)) {
+                return;
+            }
+
+            // 注册到调度器
+            itemScheduler.registerItem(item);
+        }, 5L);
+    }
+
+    /**
+     * 玩家驱动的拾取扫描
+     */
+    public void tryPickup(Player player) {
+        if (!active || !config.isPlayerDriven()) return;
+        playerHandler.tryPickup(player);
+    }
+
+    /**
+     * 检查世界是否有可拾取物品
+     */
+    public boolean hasPickupableItems(World world) {
+        return itemIndex.hasItemsInWorld(world);
+    }
+
+    /**
+     * 禁用原版拾取逻辑
+     */
+    private void disableVanillaPickup(Item item) {
+        try {
+            item.setPickupDelay(6000);
+            if (plugin.getServer().getClass().getName().contains("folia")) {
+                item.setCanPlayerPickup(false);
+            }
+        } catch (Exception e) {
+            try {
+                Object handle = item.getClass().getMethod("getHandle").invoke(item);
+                java.lang.reflect.Field field = handle.getClass().getDeclaredField("pickupDelay");
+                field.setAccessible(true);
+                field.set(handle, 6000);
+            } catch (Exception ex) {
+                plugin.getLogger().warning("无法完全禁用原版拾取逻辑: " +
+                        item.getItemStack().getType() + " - 插件仍会尝试处理拾取");
             }
         }
     }
 
-    // 玩家离线事件
+    // ====== 配置变更监听 ======
+
+    @Override
+    public void onConfigChanged(String key, Object value) {
+        plugin.getLogger().info("配置变更: " + key + " = " + value);
+
+        switch (key) {
+            case "mode.player-driven":
+                if (Boolean.TRUE.equals(value)) {
+                    playerHandler.enable();
+                } else {
+                    playerHandler.disable();
+                }
+                break;
+
+            case "mode.item-driven":
+                if (Boolean.TRUE.equals(value)) {
+                    itemScheduler.enable();
+                } else {
+                    itemScheduler.disable();
+                }
+                break;
+
+            case "enabled":
+                if (Boolean.TRUE.equals(value)) {
+                    enable();
+                } else {
+                    disable();
+                }
+                break;
+
+            case "__RELOAD_ALL__":
+                // 重新加载所有配置后重新启用组件
+                if (!plugin.isPickupDisabled()) {
+                    if (config.isPlayerDriven()) {
+                        playerHandler.enable();
+                    } else {
+                        playerHandler.disable();
+                    }
+
+                    if (config.isItemDrivenEnabled()) {
+                        itemScheduler.enable();
+                    } else {
+                        itemScheduler.disable();
+                    }
+                }
+                break;
+        }
+    }
+
+    // ====== 启用/禁用控制 ======
+
+    public void enable() {
+        if (active) return;
+        active = true;
+
+        if (config.isPlayerDriven()) {
+            playerHandler.enable();
+        }
+        if (config.isItemDrivenEnabled()) {
+            itemScheduler.enable();
+        }
+    }
+
+    public void disable() {
+        if (!active) return;
+        active = false;
+
+        playerHandler.disable();
+        itemScheduler.disable();
+        lastCheckTicks.clear();
+    }
+
+    public boolean isActive() {
+        return active && (
+                (config.isPlayerDriven() && playerHandler.isActive()) ||
+                        (config.isItemDrivenEnabled() && itemScheduler.isActive())
+        );
+    }
+
+    // ====== 获取组件实例 ======
+
+    public ItemDrivenPickupScheduler getItemScheduler() {
+        return itemScheduler;
+    }
+
+    public PickupExecutor getPickupExecutor() {
+        return pickupExecutor;
+    }
+
+    /**
+     * 玩家离线事件
+     */
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         lastCheckTicks.remove(event.getPlayer().getUniqueId());

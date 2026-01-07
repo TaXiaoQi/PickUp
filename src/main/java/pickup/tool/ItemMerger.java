@@ -1,7 +1,8 @@
-package pickup.feature;
+package pickup.tool;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
 import org.bukkit.inventory.ItemStack;
@@ -9,7 +10,9 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import pickup.Main;
-import pickup.feature.pickupmanager.ItemLifecycleManager;
+import pickup.event.PickupEventHandler;
+import pickup.feature.ItemDrivenPickupScheduler;
+import pickup.feature.ItemSpatialIndex;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -48,6 +51,9 @@ public class ItemMerger {
         this.scanIntervalTicks = Math.max(1, scanIntervalTicks); // 最小1tick
     }
 
+    private static final NamespacedKey SPAWN_TICK_KEY =
+            new NamespacedKey("pickup", "spawn_tick");
+
     /**
      * 启动合并器
      */
@@ -77,7 +83,7 @@ public class ItemMerger {
 
         // 从物品的 PDC 中获取实际的生成时间
         PersistentDataContainer pdc = item.getPersistentDataContainer();
-        Long spawnTick = pdc.get(ItemLifecycleManager.SPAWN_TICK_KEY, PersistentDataType.LONG);
+        Long spawnTick = pdc.get(SPAWN_TICK_KEY, PersistentDataType.LONG);
 
         // 如果没有生成时间，使用当前游戏时间
         if (spawnTick == null) {
@@ -237,7 +243,7 @@ public class ItemMerger {
     private long getSpawnTick(Item item) {
         PersistentDataContainer pdc = item.getPersistentDataContainer();
         return pdc.getOrDefault(
-                ItemLifecycleManager.SPAWN_TICK_KEY,
+                SPAWN_TICK_KEY,
                 PersistentDataType.LONG,
                 item.getWorld().getGameTime()
         );
@@ -327,12 +333,13 @@ public class ItemMerger {
 
         // 从索引和调度器中移除
         if (plugin instanceof Main pickupPlugin) {
-            ItemSpatialIndex index = pickupPlugin.getItemSpatialIndex();
-            if (index != null) {
-                index.unregisterItem(item);
+            PickupEventHandler handler = pickupPlugin.getPickupEventHandler();
+            if (handler != null) {
+                ItemDrivenPickupScheduler scheduler = handler.getItemScheduler();
+                if (scheduler != null) {
+                    scheduler.unregisterItem(item);
+                }
             }
-
-            pickupPlugin.getPickupManager().getItemScheduler().unregisterItem(item);
         }
     }
 

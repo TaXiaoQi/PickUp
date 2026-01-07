@@ -436,22 +436,10 @@ public class CommandManager implements CommandExecutor, TabCompleter {
     private List<String> completeValueType(String key, String current) {
         List<String> suggestions = new ArrayList<>();
 
-        // 检查是否是布尔值配置项
-        boolean isBooleanConfig = key.endsWith(".enabled") ||
-                key.contains("player-driven") ||
-                key.contains("item-driven") ||
-                key.contains("offhand-pickup") ||
-                key.contains("send-private-message") ||
-                key.equals("enabled");
-
-        // 只对布尔值配置项提供补全
-        if (isBooleanConfig) {
-            if ("true".startsWith(current.toLowerCase())) {
-                suggestions.add("true");
-            }
-            if ("false".startsWith(current.toLowerCase())) {
-                suggestions.add("false");
-            }
+        String typeHint = config.getValueTypeHint(key);
+        if (typeHint.contains("布尔值")) {
+            if ("true".startsWith(current.toLowerCase())) suggestions.add("true");
+            if ("false".startsWith(current.toLowerCase())) suggestions.add("false");
         }
 
         return suggestions;
