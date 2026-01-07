@@ -2,7 +2,6 @@ package pickup.feature;
 
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
 import org.bukkit.inventory.ItemStack;
@@ -121,39 +120,47 @@ public class ItemMerger {
                 ItemData data = worldMergeData.getItemData(item.getUniqueId());
                 if (data == null) return;
 
-                long currentTick = item.getWorld().getGameTime();  // 修复：使用getGameTime()
-                if (currentTick - data.spawnTick >= activeDurationTicks) {
-                    // 超过活跃期，移除
+                long currentTick = item.getWorld().getGameTime();
+
+                // 检查活跃期
+                if (activeDurationTicks > 0 &&
+                        currentTick - data.spawnTick >= activeDurationTicks) {
                     worldMergeData.removeItem(item.getUniqueId());
                     return;
                 }
 
-                // 检查是否需要扫描（基于scanIntervalTicks）
+                // 检查是否满堆
+                ItemStack stack = item.getItemStack();
+                if (stack.getAmount() >= stack.getMaxStackSize()) {
+                    worldMergeData.removeItem(item.getUniqueId());
+                    return;
+                }
+
+                // 检查是否需要扫描
                 if (currentTick - data.lastScanTick >= scanIntervalTicks) {
                     data.lastScanTick = currentTick;
-
-                    // 执行合并检查
                     tryMergeWithNearby(item);
 
-                    // 如果物品仍然存在且未满堆，安排下次检查
+                    // 安排下次检查（如果物品仍然有效且未满堆）
                     if (item.isValid() && !item.isDead()) {
-                        ItemStack stack = item.getItemStack();
-                        if (stack.getAmount() < stack.getMaxStackSize()) {
-                            // 安排下次检查（使用配置的扫描间隔）
+                        ItemStack newStack = item.getItemStack();
+                        if (newStack.getAmount() < newStack.getMaxStackSize()) {
                             scheduleMergeCheck(item, scanIntervalTicks);
                         } else {
-                            // 已满堆，移除
                             worldMergeData.removeItem(item.getUniqueId());
                         }
                     } else {
                         worldMergeData.removeItem(item.getUniqueId());
                     }
                 } else {
-                    // 未到扫描时间，继续等待
-                    scheduleMergeCheck(item, scanIntervalTicks - (currentTick - data.lastScanTick));
+                    // 计算下次检查的延迟
+                    long nextCheck = scanIntervalTicks - (currentTick - data.lastScanTick);
+                    if (nextCheck > 0) {
+                        scheduleMergeCheck(item, nextCheck);
+                    }
                 }
             } catch (Exception e) {
-                plugin.getLogger().log(Level.WARNING, "合并检查失败", e);
+                plugin.getLogger().log(Level.WARNING, "合并检查失败: " + e.getMessage(), e);
             }
         }, delayTicks);
     }
@@ -182,63 +189,58 @@ public class ItemMerger {
 
         if (nearby.isEmpty()) return;
 
-        // 确定哪个物品是最早生成的（包括source自身）
+        // 确定哪个物品是最早生成的
         Item oldestItem = source;
-        PersistentDataContainer sourcePdc = source.getPersistentDataContainer();
-        NamespacedKey spawnTickKey = ItemLifecycleManager.SPAWN_TICK_KEY;
-        long oldestSpawnTick = sourcePdc.getOrDefault(spawnTickKey, PersistentDataType.LONG, 0L);
+        long oldestSpawnTick = getSpawnTick(source);
 
         // 先找出最早生成的物品
         for (Item target : nearby) {
             if (target == source) continue;
 
-            PersistentDataContainer targetPdc = target.getPersistentDataContainer();
-            long targetSpawnTick = targetPdc.getOrDefault(spawnTickKey, PersistentDataType.LONG, 0L);
-
+            long targetSpawnTick = getSpawnTick(target);
             if (targetSpawnTick < oldestSpawnTick) {
                 oldestItem = target;
                 oldestSpawnTick = targetSpawnTick;
             }
         }
 
-        // 将所有可合并的物品合并到最早物品中
+        // 创建需要合并的物品列表（避免在循环中修改）
+        List<Item> toMerge = new ArrayList<>();
         for (Item target : nearby) {
-            if (target == oldestItem) continue;
+            if (target != oldestItem && canMerge(oldestItem, target)) {
+                toMerge.add(target);
+            }
+        }
+
+        // 执行合并
+        for (Item target : toMerge) {
+            // 检查物品是否仍然有效
+            if (!oldestItem.isValid() || oldestItem.isDead() ||
+                    !target.isValid() || target.isDead()) {
+                continue;
+            }
 
             if (canMerge(oldestItem, target)) {
-                // 执行合并（老物品合并到更老的物品）
-                if (oldestItem == source) {
-                    // source就是最老的，其他合并到source
-                    performMerge(source, target);
-                    // 从数据中移除被合并的物品
-                    String worldName = world.getName();
-                    WorldMergeData worldMergeData = worldData.get(worldName);
-                    if (worldMergeData != null) {
-                        worldMergeData.removeItem(target.getUniqueId());
-                    }
-                } else if (target == source) {
-                    // source不是最老的，source合并到最老的
-                    performMerge(oldestItem, source);
-                    // 从数据中移除被合并的物品（source）
-                    String worldName = world.getName();
-                    WorldMergeData worldMergeData = worldData.get(worldName);
-                    if (worldMergeData != null) {
-                        worldMergeData.removeItem(source.getUniqueId());
-                    }
-                    // 因为source被移除了，可以提前结束
+                performMerge(oldestItem, target);
+
+                // 如果oldestItem变成source，并且source被完全合并了，可以提前结束
+                if (oldestItem == source && source.isDead()) {
                     break;
-                } else {
-                    // 其他物品合并到最老的
-                    performMerge(oldestItem, target);
-                    // 从数据中移除被合并的物品
-                    String worldName = world.getName();
-                    WorldMergeData worldMergeData = worldData.get(worldName);
-                    if (worldMergeData != null) {
-                        worldMergeData.removeItem(target.getUniqueId());
-                    }
                 }
             }
         }
+    }
+
+    /**
+     * 获取物品的生成时间
+     */
+    private long getSpawnTick(Item item) {
+        PersistentDataContainer pdc = item.getPersistentDataContainer();
+        return pdc.getOrDefault(
+                ItemLifecycleManager.SPAWN_TICK_KEY,
+                PersistentDataType.LONG,
+                item.getWorld().getGameTime()
+        );
     }
 
     /**
@@ -251,13 +253,12 @@ public class ItemMerger {
         // 基础类型检查
         if (s1.getType() != s2.getType()) return false;
 
-        // 堆叠上限检查
-        if (s1.getAmount() >= s1.getMaxStackSize() ||
-                s2.getAmount() >= s2.getMaxStackSize()) return false;
-        if (s1.getAmount() + s2.getAmount() > s1.getMaxStackSize()) return false;
-
         // 原版物品合并逻辑：检查是否可以堆叠
-        return s1.isSimilar(s2);
+        if (!s1.isSimilar(s2)) return false;
+
+        // 堆叠上限检查
+        int totalAmount = s1.getAmount() + s2.getAmount();
+        return totalAmount <= s1.getMaxStackSize();
     }
 
     /**
@@ -266,27 +267,88 @@ public class ItemMerger {
     private void performMerge(Item keep, Item remove) {
         if (!keep.isValid() || !remove.isValid()) return;
 
-        // 合并物品堆叠数量
         try {
             ItemStack keepStack = keep.getItemStack();
             ItemStack removeStack = remove.getItemStack();
-            keepStack.setAmount(keepStack.getAmount() + removeStack.getAmount());
-        } catch (Exception ignored) {
-            // 忽略合并过程中的异常
+
+            // 记录原始数量
+            int originalKeepAmount = keepStack.getAmount();
+            int originalRemoveAmount = removeStack.getAmount();
+            int totalAmount = originalKeepAmount + originalRemoveAmount;
+            int maxStackSize = keepStack.getMaxStackSize();
+
+            ItemStack newKeepStack = keepStack.clone();
+            if (totalAmount <= maxStackSize) {
+                // 可以完全合并
+                newKeepStack.setAmount(totalAmount);
+                keep.setItemStack(newKeepStack);
+
+                // 删除被合并的物品实体
+                remove.remove();
+
+                // 清理被合并物品的数据
+                cleanupMergedItem(remove);
+
+            } else {
+                // 超过最大堆叠，只能合并部分
+                // 设置保留物品为满堆
+                newKeepStack.setAmount(maxStackSize);
+                keep.setItemStack(newKeepStack);
+
+                // 设置被合并物品为剩余数量
+                int remaining = totalAmount - maxStackSize;
+                ItemStack newRemoveStack = removeStack.clone();
+                newRemoveStack.setAmount(remaining);
+                remove.setItemStack(newRemoveStack);
+
+                // 被合并物品还有剩余，不删除
+            }
+
+            // 更新主物品的索引
+            updateItemIndex(keep);
+
+        } catch (Exception e) {
+            plugin.getLogger().log(Level.WARNING, "合并操作失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 清理被合并物品的关联数据
+     */
+    private void cleanupMergedItem(Item item) {
+        if (item.isDead() || !item.isValid()) return;
+
+        // 从世界数据中移除
+        String worldName = item.getWorld().getName();
+        WorldMergeData worldMergeData = worldData.get(worldName);
+        if (worldMergeData != null) {
+            worldMergeData.removeItem(item.getUniqueId());
         }
 
-        // 删除被合并的物品实体
-        remove.remove();
-
-        // 从空间索引中移除被合并的物品
+        // 从索引和调度器中移除
         if (plugin instanceof Main pickupPlugin) {
             ItemSpatialIndex index = pickupPlugin.getItemSpatialIndex();
             if (index != null) {
-                index.unregisterItem(remove);
+                index.unregisterItem(item);
             }
 
-            // 修复：同时从调度器队列中移除
-            pickupPlugin.getPickupManager().getItemScheduler().unregisterItem(remove);
+            pickupPlugin.getPickupManager().getItemScheduler().unregisterItem(item);
+        }
+    }
+
+    /**
+     * 更新物品在索引中的状态
+     */
+    private void updateItemIndex(Item item) {
+        if (!item.isValid()) return;
+
+        if (plugin instanceof Main pickupPlugin) {
+            ItemSpatialIndex index = pickupPlugin.getItemSpatialIndex();
+            if (index != null) {
+                // 重新注册以更新状态
+                index.unregisterItem(item);
+                index.registerItem(item);
+            }
         }
     }
 
