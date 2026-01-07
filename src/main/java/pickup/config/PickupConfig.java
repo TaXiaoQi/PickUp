@@ -89,8 +89,6 @@ public class PickupConfig {
             // 4. 重新加载所有字段
             loadAllFields();
 
-            plugin.getLogger().info("配置已从磁盘重新加载");
-
         } catch (Exception e) {
             plugin.getLogger().severe("重载配置失败: " + e.getMessage());
             throw e;

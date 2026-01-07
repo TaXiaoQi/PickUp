@@ -161,31 +161,37 @@ public class ItemLifecycleManager {
         if (item == null || !item.isValid() || item.isDead()) {
             return;
         }
-        try {
-            item.setPickupDelay(0);
 
-            PersistentDataContainer pdc = item.getPersistentDataContainer();
-            pdc.remove(SPAWN_TICK_KEY);
-            pdc.remove(DROPPED_BY_KEY);
-            pdc.remove(SOURCE_KEY);
-            pdc.remove(INITIALIZED_KEY);
+        Location loc = item.getLocation();
+        plugin.getServer().getRegionScheduler().execute(plugin, loc, () -> {
+            if (!item.isValid() || item.isDead()) return;
 
-            ItemStack stack = item.getItemStack();
-            if (!stack.getType().isAir()) {
-                ItemStack cleanStack = createCleanStack(stack);
-                item.setItemStack(cleanStack);
+            try {
+                item.setPickupDelay(0);
+
+                PersistentDataContainer pdc = item.getPersistentDataContainer();
+                pdc.remove(SPAWN_TICK_KEY);
+                pdc.remove(DROPPED_BY_KEY);
+                pdc.remove(SOURCE_KEY);
+                pdc.remove(INITIALIZED_KEY);
+
+                ItemStack stack = item.getItemStack();
+                if (!stack.getType().isAir()) {
+                    ItemStack cleanStack = createCleanStack(stack);
+                    item.setItemStack(cleanStack);
+                }
+
+                // 从空间索引移除
+                itemIndex.unregisterItem(item);
+
+                // 从调度器移除
+                if (plugin.getPickupManager() != null && plugin.getPickupManager().getItemScheduler() != null) {
+                    plugin.getPickupManager().getItemScheduler().unregisterItem(item);
+                }
+            } catch (Exception e) {
+                plugin.getLogger().warning("清理物品失败: " + e.getMessage());
             }
-
-            // 从空间索引移除
-            itemIndex.unregisterItem(item);
-
-            // 从调度器移除
-            if (plugin.getPickupManager() != null && plugin.getPickupManager().getItemScheduler() != null) {
-                plugin.getPickupManager().getItemScheduler().unregisterItem(item);
-            }
-        } catch (Exception e) {
-            plugin.getLogger().warning("清理物品失败: " + e.getMessage());
-        }
+        });
     }
 
     public boolean hasPickupMark(ItemStack stack) {
