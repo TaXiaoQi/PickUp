@@ -114,6 +114,18 @@ public class PickupExecutor {
                     new ItemStack(stack.getType(), 1));
             item.remove();
             itemIndex.unregisterItem(item);
+
+            // 检查是否需要停用调度器
+            if (config.isItemDrivenEnabled()) {
+                PickupEventHandler pickupHandler = plugin.getPickupEventHandler();
+                if (pickupHandler != null) {
+                    ItemDrivenPickupScheduler scheduler = pickupHandler.getItemScheduler();
+                    if (scheduler != null) {
+                        scheduler.unregisterItem(item);
+                        scheduler.checkAndAutoDisable();
+                    }
+                }
+            }
         }
     }
 
@@ -311,6 +323,8 @@ public class PickupExecutor {
                     ItemDrivenPickupScheduler scheduler = pickupHandler.getItemScheduler();
                     if (scheduler != null) {
                         scheduler.unregisterItem(item);
+                        // 重要：检查是否需要停用调度器
+                        scheduler.checkAndAutoDisable();
                     }
                 }
             }

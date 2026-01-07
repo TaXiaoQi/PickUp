@@ -34,16 +34,52 @@ public class PlayerDrivenPickupHandler {
         if (player.getGameMode() == org.bukkit.GameMode.SPECTATOR) return;
         if (!player.isOnline()) return;
 
-        // 使用索引获取附近物品 - 修复范围计算
+        // 使用索引获取附近物品
         double range = config.getPickupRange();
         Set<Item> nearbyItems = itemIndex.getNearbyItems(player.getLocation(), range);
 
         // 对每个物品尝试拾取
         for (Item item : nearbyItems) {
             if (item.isValid() && !item.isDead()) {
-                pickupExecutor.performPlayerPickup(player, item);
+                // 新增：在拾取前检查延迟
+                // 这样可以避免执行完整的canPickupNow逻辑
+                if (isPickupDelayOver(item)) {
+                    pickupExecutor.performPlayerPickup(player, item);
+                }
             }
         }
+    }
+
+    /**
+     * 检查物品是否已过拾取延迟
+     */
+    private boolean isPickupDelayOver(Item item) {
+        // 获取物品元数据
+        ItemSpatialIndex.ItemMetadata meta = itemIndex.getItemMetadata(item);
+        if (meta == null) {
+            return false;
+        }
+
+        long currentTick = item.getWorld().getGameTime();
+        long spawnTick = meta.spawnTick;
+        ItemSpatialIndex.ItemSourceType source = meta.source;
+
+        // 根据来源类型获取所需延迟
+        long requiredDelay = getRequiredDelay(source);
+
+        // 检查是否已过延迟
+        return (currentTick - spawnTick) >= requiredDelay;
+    }
+
+    /**
+     * 根据物品来源类型获取所需的延迟
+     */
+    private long getRequiredDelay(ItemSpatialIndex.ItemSourceType source) {
+        return switch (source) {
+            case PLAYER_DROP -> config.getPlayerDropDelayTicks();
+            case NATURAL_DROP -> config.getNaturalDropDelayTicks();
+            default -> config.getInstantPickupDelayTicks();
+        };
     }
 
     // ====== 启用/禁用控制 ======

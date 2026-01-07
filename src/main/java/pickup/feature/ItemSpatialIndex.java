@@ -59,13 +59,6 @@ public class ItemSpatialIndex {
 
     // ====== 元数据接口 ======
 
-    /**
-     * 获取物品元数据
-     */
-    public ItemMetadata getItemMetadata(UUID itemId) {
-        return itemMetadata.get(itemId);
-    }
-
     public ItemMetadata getItemMetadata(Item item) {
         if (item == null) return null;
         return itemMetadata.get(item.getUniqueId());
