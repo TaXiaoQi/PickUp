@@ -124,7 +124,6 @@ public class ArmorType {
                 set.add(material);
             }
         } catch (Exception ignored) {
-            // 忽略不存在的 Material
         }
     }
 
@@ -142,26 +141,5 @@ public class ArmorType {
 
     public static boolean isBoots(Material material) {
         return material != null && BOOTS.contains(material);
-    }
-
-    public static boolean isArmor(Material material) {
-        return isHelmet(material) || isChestplate(material) ||
-                isLeggings(material) || isBoots(material);
-    }
-
-    public static boolean isWeapon(Material material) {
-        return material != null && WEAPONS.contains(material);
-    }
-
-    public static boolean isTool(Material material) {
-        return material != null && TOOLS.contains(material);
-    }
-
-    public static boolean isWeaponOrTool(Material material) {
-        return isWeapon(material) || isTool(material);
-    }
-
-    public static boolean isEquipment(Material material) {
-        return isArmor(material) || isWeapon(material) || isTool(material);
     }
 }

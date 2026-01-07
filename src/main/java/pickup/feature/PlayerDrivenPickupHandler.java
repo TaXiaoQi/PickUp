@@ -61,8 +61,8 @@ public class PlayerDrivenPickupHandler {
         }
 
         long currentTick = item.getWorld().getGameTime();
-        long spawnTick = meta.spawnTick;
-        ItemSpatialIndex.ItemSourceType source = meta.source;
+        long spawnTick = meta.spawnTick();
+        ItemSpatialIndex.ItemSourceType source = meta.source();
 
         // 根据来源类型获取所需延迟
         long requiredDelay = getRequiredDelay(source);

@@ -67,8 +67,8 @@ public class ItemDrivenPickupScheduler {
 
             // 计算冷却时间
             long currentTick = item.getWorld().getGameTime();
-            long spawnTick = meta.spawnTick;
-            long requiredDelay = getRequiredDelay(meta.source);
+            long spawnTick = meta.spawnTick();
+            long requiredDelay = getRequiredDelay(meta.source());
             long delayLeft = requiredDelay - (currentTick - spawnTick);
 
             // 如果还在冷却期，添加到延迟队列
@@ -127,8 +127,8 @@ public class ItemDrivenPickupScheduler {
             }
 
             long currentTick = item.getWorld().getGameTime();
-            long spawnTick = meta.spawnTick;
-            long requiredDelay = getRequiredDelay(meta.source);
+            long spawnTick = meta.spawnTick();
+            long requiredDelay = getRequiredDelay(meta.source());
 
             if (currentTick - spawnTick >= requiredDelay) {
                 registerItemImmediately(item);
@@ -379,7 +379,7 @@ public class ItemDrivenPickupScheduler {
         }
 
         long currentTick = item.getWorld().getGameTime();
-        long spawnTick = meta.spawnTick;
+        long spawnTick = meta.spawnTick();
         long activeTicks = config.getActiveDetectionTicks();
         if (activeTicks < 0) {
             return true;

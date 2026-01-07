@@ -23,17 +23,10 @@ public class ItemSpatialIndex {
         PLAYER_DROP, NATURAL_DROP, INSTANT_PICKUP, UNKNOWN
     }
 
-    // 新增：物品元数据
-    public static class ItemMetadata {
-        public final long spawnTick;
-        public final ItemSourceType source;
-        public final UUID droppedBy; // 如果是玩家丢弃
-
-        public ItemMetadata(long spawnTick, ItemSourceType source, UUID droppedBy) {
-            this.spawnTick = spawnTick;
-            this.source = source;
-            this.droppedBy = droppedBy;
-        }
+    /**
+     * @param droppedBy 如果是玩家丢弃
+     */ // 新增：物品元数据
+        public record ItemMetadata(long spawnTick, ItemSourceType source, UUID droppedBy) {
     }
 
 
@@ -62,30 +55,6 @@ public class ItemSpatialIndex {
     public ItemMetadata getItemMetadata(Item item) {
         if (item == null) return null;
         return itemMetadata.get(item.getUniqueId());
-    }
-
-    /**
-     * 获取物品生成时间
-     */
-    public long getSpawnTick(Item item) {
-        ItemMetadata meta = getItemMetadata(item);
-        return meta != null ? meta.spawnTick : item.getWorld().getGameTime();
-    }
-
-    /**
-     * 获取物品来源类型
-     */
-    public ItemSourceType getSourceType(Item item) {
-        ItemMetadata meta = getItemMetadata(item);
-        return meta != null ? meta.source : ItemSourceType.UNKNOWN;
-    }
-
-    /**
-     * 获取丢弃者（如果是玩家丢弃）
-     */
-    public UUID getDroppedBy(Item item) {
-        ItemMetadata meta = getItemMetadata(item);
-        return meta != null ? meta.droppedBy : null;
     }
 
     /**

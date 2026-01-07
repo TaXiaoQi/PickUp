@@ -148,9 +148,9 @@ public class PickupExecutor {
         }
 
         long currentTick = item.getWorld().getGameTime();
-        long spawnTick = meta.spawnTick;
-        ItemSpatialIndex.ItemSourceType source = meta.source;
-        UUID droppedBy = meta.droppedBy;
+        long spawnTick = meta.spawnTick();
+        ItemSpatialIndex.ItemSourceType source = meta.source();
+        UUID droppedBy = meta.droppedBy();
 
         // 检查延迟
         long requiredDelay = getRequiredDelay(source);
