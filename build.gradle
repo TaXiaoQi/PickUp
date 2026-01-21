@@ -2,7 +2,7 @@ plugins {
     id 'java'
 }
 
-def pluginVersion = project.findProperty('pluginVersion') ?: '1.4.0'
+def pluginVersion = project.findProperty('pluginVersion')
 
 group = 'pickup'
 version = pluginVersion
