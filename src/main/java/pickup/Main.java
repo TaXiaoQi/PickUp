@@ -1,7 +1,6 @@
 package pickup;
 
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
-import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.util.Objects;
@@ -76,6 +75,11 @@ public class Main extends JavaPlugin {
             pickupConfig.onDisable();
         }
 
+        // 5.恢复所有掉落物延时
+        if (pickupEventHandler != null) {
+            pickupEventHandler.restoreAllItemsPickupDelay();
+        }
+
         // 5. 取消所有调度任务
         cancelAllScheduledTasks();
 
@@ -126,7 +130,7 @@ public class Main extends JavaPlugin {
         // 1. 创建空间索引
         this.itemSpatialIndex = new ItemSpatialIndex(this);
 
-        // 2. 创建拾取事件处理器（代替原来的PickupManager）
+        // 2. 创建拾取事件处理器
         this.pickupEventHandler = new PickupEventHandler(this, pickupConfig, itemSpatialIndex);
 
         // 3. 创建物品合并器
@@ -137,7 +141,7 @@ public class Main extends JavaPlugin {
                     pickupConfig.getItemMergeScanIntervalTicks());
         }
 
-        // 4. 注册事件监听器（只注册一次）
+        // 4. 注册事件监听器
         registerEventListener();
 
         // 5. 启动功能（如果未禁用）
@@ -197,14 +201,7 @@ public class Main extends JavaPlugin {
         // 2. 重载配置
         pickupConfig.reload();
 
-        // 3. 重新初始化事件处理器
-        this.pickupEventHandler = new PickupEventHandler(this, pickupConfig, itemSpatialIndex);
-
-        // 4. 重新注册事件监听器
-        HandlerList.unregisterAll(pickupEventHandler); // 先注销
-        getServer().getPluginManager().registerEvents(pickupEventHandler, this); // 再注册
-
-        // 5. 重新初始化物品合并器
+        // 3. 重新初始化物品合并器
         if (pickupConfig.isItemMergeEnabled()) {
             this.itemMerger = new ItemMerger(this,
                     pickupConfig.getItemMergeRange(),
@@ -214,7 +211,7 @@ public class Main extends JavaPlugin {
             this.itemMerger = null;
         }
 
-        // 6. 重新启动功能（如果未禁用）
+        // 4. 重新启动功能（如果未禁用）
         if (!isPickupDisabled()) {
             enableModules();
         }
@@ -243,6 +240,11 @@ public class Main extends JavaPlugin {
         // 停止功能模块
         disableModules();
 
+        // 恢复所有物品的原版拾取延迟
+        if (pickupEventHandler != null) {
+            pickupEventHandler.restoreAllItemsPickupDelay();
+        }
+
         getLogger().info("拾取功能已停止");
     }
 
@@ -250,7 +252,7 @@ public class Main extends JavaPlugin {
      * 注册命令处理器
      */
     private void registerCommands() {
-        // 注册 /up 和 /pickup 命令（使用新的CommandManager）
+        // 注册 /up 和 /pickup 命令
         CommandManager commandManager = new CommandManager(this);
 
         // 注册主命令

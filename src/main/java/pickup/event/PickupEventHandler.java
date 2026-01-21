@@ -241,13 +241,6 @@ public class PickupEventHandler implements Listener, PickupConfig.ConfigChangeLi
             return;
         }
 
-        // 记录调试信息（可选）
-        if (plugin.getConfig().getBoolean("debug", false)) {
-            plugin.getLogger().info("EntityPickupItemEvent 被取消 - " +
-                    event.getEntity().getName() + " 拾取 " +
-                    event.getItem().getItemStack().getType());
-        }
-
         // 取消原版拾取
         event.setCancelled(true);
     }
@@ -337,6 +330,29 @@ public class PickupEventHandler implements Listener, PickupConfig.ConfigChangeLi
                         item.getItemStack().getType() + " - 插件仍会尝试处理拾取");
             }
         }
+    }
+
+    /**
+     * 恢复所有物品的原版拾取延迟（供外部调用）
+     */
+    public void restoreAllItemsPickupDelay() {
+        plugin.getLogger().info("恢复所有物品的原版拾取延迟...");
+
+        int restored = 0;
+        for (World world : plugin.getServer().getWorlds()) {
+            for (Item item : world.getEntitiesByClass(Item.class)) {
+                try {
+                    if (item.isValid() && !item.isDead()) {
+                        item.setPickupDelay(0);
+                        restored++;
+                    }
+                } catch (Exception ignored) {
+                    // 静默处理异常
+                }
+            }
+        }
+
+        plugin.getLogger().info("已恢复 " + restored + " 个物品的拾取延迟");
     }
 
     // ====== 配置变更监听 ======
