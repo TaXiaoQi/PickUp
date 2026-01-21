@@ -21,7 +21,6 @@ repositories {
 }
 
 dependencies {
-    // compileOnly 'io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT'
     compileOnly 'dev.folia:folia-api:1.21.11-R0.1-SNAPSHOT'
     compileOnly 'net.kyori:adventure-api:4.17.0'
     compileOnly 'net.kyori:adventure-platform-api:4.3.3'
@@ -34,6 +33,6 @@ processResources {
 }
 
 jar {
-    archiveFileName = "PickUp-spigo-folia-${pluginVersion}.jar"
+    archiveFileName = "PickUp-paper-folia-${pluginVersion}.jar"
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }

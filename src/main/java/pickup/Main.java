@@ -60,27 +60,27 @@ public class Main extends JavaPlugin {
             pickupEventHandler.disable();
         }
 
-        // 2. 停止合并器
-        if (itemMerger != null) {
-            itemMerger.stop();
-        }
-
-        // 3. 停止空间索引清理任务
-        if (itemSpatialIndex != null) {
-            itemSpatialIndex.stopCleanupTask();
-        }
-
-        // 4. 保存所有待定的配置更改
-        if (pickupConfig != null) {
-            pickupConfig.onDisable();
-        }
-
-        // 5.恢复所有掉落物延时
+        // 2.恢复所有掉落物延时
         if (pickupEventHandler != null) {
             pickupEventHandler.restoreAllItemsPickupDelay();
         }
 
-        // 5. 取消所有调度任务
+        // 3. 停止合并器
+        if (itemMerger != null) {
+            itemMerger.stop();
+        }
+
+        // 4. 停止空间索引清理任务
+        if (itemSpatialIndex != null) {
+            itemSpatialIndex.stopCleanupTask();
+        }
+
+        // 5. 保存所有待定的配置更改
+        if (pickupConfig != null) {
+            pickupConfig.onDisable();
+        }
+
+        // 6. 取消所有调度任务
         cancelAllScheduledTasks();
 
         getLogger().info("PickUp 插件已完全卸载");
@@ -152,6 +152,11 @@ public class Main extends JavaPlugin {
         // 6. 启动空间索引清理任务
         if (itemSpatialIndex != null) {
             itemSpatialIndex.startCleanupTask();
+        }
+
+        // 7.在插件功能禁用时恢复拾取延迟
+        if (isPickupDisabled() && pickupEventHandler != null) {
+            pickupEventHandler.restoreAllItemsPickupDelay();
         }
     }
 
