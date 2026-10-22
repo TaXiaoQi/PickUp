@@ -1,0 +1,10 @@
+// 平台无关核心逻辑，编译仅依赖最低公共 API（Spigot 1.17.1）
+dependencies {
+    compileOnly 'org.spigotmc:spigot-api:1.17.1-R0.1-SNAPSHOT'
+}
+
+// core 不产出插件 jar，仅作为依赖被打包进各启动器
+jar {
+    enabled = true
+    archiveFileName = "PickUp-core-${project.version}.jar"
+}

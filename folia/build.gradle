@@ -1,0 +1,17 @@
+// folia-api 选用 1.19.4（Java 17 时代版本），保证 Folia 1.19.4+ 全系列可加载
+dependencies {
+    compileOnly project(':core')
+    compileOnly 'dev.folia:folia-api:1.19.4-R0.1-SNAPSHOT'
+}
+
+processResources {
+    filesMatching('plugin.yml') {
+        expand(version: project.version)
+    }
+}
+
+jar {
+    archiveFileName = "PickUp-Folia-${project.version}.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from project(':core').sourceSets.main.output
+}

@@ -37,22 +37,32 @@ A plugin that allows fully customizable pickup behavior for both players and mob
 ## **Key Advantages**
 
 - ✅ **Dual-Mode System**: Choose between player-driven or item-driven pickup (or both)
-- ✅ **Folia-Ready**: Full multi-threading support for high-performance servers
+- ✅ **Multi-Platform**: Dedicated builds for Paper, Spigot, and Folia
 - ✅ **Non-Intrusive**: Disables vanilla pickup only when active, fully restorable
 - ✅ **Real-Time Configuration**: All settings adjustable via commands
 - ✅ **Smart Item Management**: Automatic merging, cleanup, and optimization
-- ✅ **High Compatibility**: Works with Paper 1.17+ and Folia 1.19.4+
+- ✅ **High Compatibility**: Paper/Spigot 1.17+ and Folia 1.19.4+
+
+## **Supported Platforms & Versions**
+
+| Build | Server Core | Version Range | Java Requirement |
+|---|---|---|---|
+| `PickUp-Paper-*.jar` | Paper | 1.17 ~ 1.21.x | 17+ (21 for 1.20.5+) |
+| `PickUp-Spigot-*.jar` | Spigot / CraftBukkit | 1.17 ~ 1.21.x | 17+ (21 for 1.20.5+) |
+| `PickUp-Folia-*.jar` | Folia | 1.19.4 ~ 1.21.x | 17+ (21 for 1.20.5+) |
+
+> Each build only runs on its matching core. Loading the wrong build will disable the plugin automatically with a log hint.
 
 ## **Important Notes**
 
-- **Requires Paper/Folia**: Does not work with Spigot or CraftBukkit
+- **Choose the Right Build**: Use the jar matching your server core (see table above)
 - **Permission Required**: `pickup.admin` permission for all commands (default: OP)
 - **Configuration**: All settings in `config.yml`, hot-reload with `/up reload`
 
 ## **Installation**
 
-1. Ensure you're running **Paper 1.17+** or **Folia 1.19.4+**
-2. Place `PickUp.jar` in your `plugins/` folder
+1. Ensure you're running **Paper/Spigot 1.17+** or **Folia 1.19.4+**
+2. Place the jar matching your server core (`PickUp-Paper` / `PickUp-Spigot` / `PickUp-Folia`) in your `plugins/` folder
 3. Restart your server
 4. Use `/up status` to verify installation
 5. Configure settings via `/up set` or edit `config.yml`

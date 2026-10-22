@@ -1,0 +1,16 @@
+dependencies {
+    compileOnly project(':core')
+    compileOnly 'org.spigotmc:spigot-api:1.17.1-R0.1-SNAPSHOT'
+}
+
+processResources {
+    filesMatching('plugin.yml') {
+        expand(version: project.version)
+    }
+}
+
+jar {
+    archiveFileName = "PickUp-Spigot-${project.version}.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from project(':core').sourceSets.main.output
+}
